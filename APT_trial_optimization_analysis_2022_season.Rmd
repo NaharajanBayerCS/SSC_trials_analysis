@@ -1,0 +1,975 @@
+---
+title: "EMEA Corn APT Trials Review - 2022 trials"
+author: "Naharajan Lakshmanaperumal, Senior Data Scientist, EMEA Agronomy"
+date: "10.06.2025"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+  word_document:
+    reference_docx: south_africa_variety_data_report_final.docx
+  beamer_presentation: default
+  pdf_document: default
+  slidy_presentation: default
+always_allow_html: yes
+---
+
+
+# Contents
+
+<div class="logos"><img src="/mnt/images/emea_md_logo_3.PNG" width="50px" align="right"></div>
+ 
+<div class="logos"><img src="/mnt/images/RZ_EMEA_Sign_Claim_Screen_RGB_on_white (1) (1).png" width="100px" align="right"></div>
+
+
+- Dataset from CSW 
+
+- Exploratory Data Analysis & retrospective
+
+- Power Analysis
+
+  1. Italy
+  
+
+
+<div class="logos"><img src="/mnt/images/restricted.PNG" width="100px" align="right"></div>
+
+
+# APT Trials Optimization
+
+- The goal is to optimize the Agronomy Corn APT Trial network based on power analysis using data from 2022 trials 
+
+
+<div class="logos"><img src="/mnt/images/emea_md_logo_3.PNG" width="50px" align="right"></div>
+ 
+<div class="logos"><img src="/mnt/images/RZ_EMEA_Sign_Claim_Screen_RGB_on_white (1) (1).png" width="100px" align="right"></div>
+
+
+
+ 
+
+```{r message=FALSE,warnings=FALSE,eval=F,echo=F}
+library(bigrquery)
+library(dplyr)
+#install.packages("wk")
+library(wk)
+library(readxl)
+library(readr)
+library(tidyr)
+
+source("/mnt/codes/PowerAnalysis_LxR_12Fgp.R")
+
+#cfv_data = read_excel("/mnt/data/EME_MD_CFV_fields_info_28thJan2024.xlsx")
+#library(sparklyr)
+#spark_install(version = "2.4")
+#spark_install()
+#sc <- spark_connect(master="local")
+
+#binstall.packages("sparkbq")
+#library(sparkbq)
+
+source("/mnt/codes/DIT_functions (1) (2) (1).R")
+
+library(readxl)
+
+
+#source("/mnt/codes/DIT_functions (1).R")
+
+#dit_dashboard = read_excel("/mnt/data/2023-DIT-EMEA-Corn-Grain_Dashboard.xlsx")
+
+#names(dit_dashboard)[11] ="velocity_field_name"
+
+#elocity_field_names = unique(dit_dashboard$velocity_field_name)
+
+
+
+.reqp <- c("jsonlite", "httr", "vaultr", "bigrquery")
+
+
+.loadlibs <- sapply(X = .reqp, function(p) {
+
+  if(!(p %in% rownames(installed.packages()))) {
+
+    install.packages(p, quiet = T, repos = "https://cran.rstudio.com")
+
+  }
+
+  library(p, character.only = T, warn.conflicts = F)
+
+})
+
+
+
+.vault <- vault_client(login = T, quiet = T,
+                       role_id = approle_id_csw,
+                       secret_id = approle_secret_csw)
+
+.vault_scrt <- .vault$read('secret/csw/service-identities/emeamdfieldtrialanalytics',
+
+                           metadata = T)
+
+### Transform the secret into a readable JSON
+
+.scrt_json <- rawToChar(base64_dec(.vault_scrt$data))
+
+
+
+### Authorize bigrquery to view and manage BigQuery projects
+
+.project <-"bcs-market-dev-lake"
+
+
+bq_auth(path = .scrt_json)
+
+
+```
+
+# Querying CSW for getting the trial data
+
+**bcs-global-md-fi-lake.field_trial.v_fts_all** table in CSW has the data from Velocity EMEA Agronomy trials.
+
+- Data from 2022 Agronomy/MD trials
+
+- Data from fields with yield data from the following countries:
+
+  1. Italy
+
+
+# Power Analysis
+
+The Power analysis for multi-location trials with 1- or 2-factor treatments
+
+**Purpose:**
+The Power analysis is based on the t-test for testing 
+Ho: no difference between two means versus 
+Ha: the difference between two means is d% of overall mean. 
+
+Power analysis is used to estimate the number of locations so that the conclusion claimed can be ensured with a desired confidence when conducting a trial to evaluate treatments with experimental design CR(Complete Randomized), RCB(Randomized Complete Block), Split Plot design.
+
+Power:  
+
+The probability of rejecting the null hypothesis (Ho: Delta=0; no difference between two means) when it is false. Or, the probability of accepting the alternative hypothesis (Ha: two means are different) when it is true.
+How to use the Power chart? Use an example to illustrate how to get the minimun location number required from the power chart: when 80% power is desired, draw a horizontal line at 80% (say line-P). if 10% difference is assumed between means of null and alternative hypothsis, draw a vertical line (say line-d) from the intersection of the power curve for 10% and line-P, then the minimun number required is the first integer at the right hand side of line-d.
+
+
+Factors related to the power and location number determination:  
+
+Power depends on several quantities including: rep# per location, variation(MSE and location by treatments variances), significance level(alpha), the desired true difference between two treatment means and the study design.
+
+
+
+```{r message=FALSE,warnings=FALSE,echo=F,eval=F}
+con <- dbConnect(
+  bigquery(),
+  project = "bcs-global-md-fi-lake",
+  dataset = "field_trial"
+)
+
+
+plot_current <- tbl(con, "v_velocity_br_all")
+
+velocity_emea_1 = filter(plot_current,regional_hub=="Europe Middle East Africa")
+
+velocity_emea_1 = filter(velocity_emea_1,planting_year==2024) 
+
+
+
+orgs = c("Breeding","Market Development")
+
+velocity_emea_1 = filter(velocity_emea_1,organization%in% orgs)
+
+countries = c("Ethiopia","South Africa","Tanzania","Malawi","Zambia","Kenya")
+
+velocity_emea_1 = filter(velocity_emea_1,!country%in% countries)
+
+velocity_emea_1 = filter(velocity_emea_1, !is.na(country))
+
+velocity_emea_2= velocity_emea_1 %>% select(organization,planting_year,market,country,state,county,protocol_name,experiment_name,field_name,homesite_name,field_coordinates) %>% collect() 
+
+#%>% unique()
+
+velocity_emea_3 = velocity_emea_2 %>% unique()
+
+velocity_emea_4  = filter(velocity_emea_3, !is.na(field_name))
+
+write_csv(velocity_emea_4,"/mnt/data/md_breeding_location_coordinates.csv")
+
+unique_fields = velocity_emea_4 %>% dplyr::select(organization,planting_year,market,country,state,field_name,homesite_name,field_coordinates) %>% unique()
+
+write_csv(unique_fields,"/mnt/data/unique_md_breeding_location_coordinates.csv")
+
+
+library(sf)
+plot_field_coordinates = st_as_sf(unique_fields, wkt=c("field_coordinates"), crs=4326)
+
+
+test_field_coordinates = plot_field_coordinates %>% group_by(field_name) %>% summarise(test_field_boundary = st_combine( polygon )) %>% st_convex_hull()
+
+whole_field_coordinates = inner_join(whole_field_coordinates,test_field_coordinates)
+whole_field_coordinates = as.data.frame(whole_field_coordinates)
+save(whole_field_coordinates,file="/mnt/field_reports_2025/velocity_data/whole_field_coordinates.RData")
+
+#field_boundary$Trial = git3_shape$Trial[1]
+
+# names(field_boundary)[1] = "test_field_boundary"
+#field_boundary=as.data.frame(field_boundary)
+plot_field_coordinates$centroid <- st_centroid(plot_field_coordinates$polygon)
+
+#plot_field_coordinates = plot_field_coordinates %>% mutate(number_of_densities = length(unique(prx.df$Popultn)))
+
+plot_field_coordinates <- plot_field_coordinates %>%
+    mutate(longitude = unlist(purrr::map(plot_field_coordinates$centroid,1)),
+           latitude = unlist(purrr::map(plot_field_coordinates$centroid,2))) 
+
+#plot_field_coordinates$polygon = NULL
+plot_field_coordinates$centroid = NULL
+
+plot_field_coordinates = as.data.frame(plot_field_coordinates)
+
+
+```
+
+bcs-global-md-fi-lake.field_trial.v_fts_all
+
+```{r message=FALSE,warnings=FALSE,echo=F,eval=F}
+con <- dbConnect(
+  bigquery(),
+  project = "bcs-global-md-fi-lake",
+  dataset = "field_trial"
+)
+
+
+plot_current <- tbl(con, "v_fts_all")
+
+velocity_emea_1 = filter(plot_current,region=="EMEA")
+
+velocity_emea_1 = filter(velocity_emea_1,trial_year==2022) 
+
+
+
+orgs = c("Technology Development")
+
+velocity_emea_1 = filter(velocity_emea_1,pipeline_function%in% orgs)
+
+countries = c("Turkey","France","Italy","Greece","Ukraine","Portugal","Hungary","Romania","Czech Republic","Spain")
+
+velocity_emea_1 = filter(velocity_emea_1,country%in% countries)
+
+velocity_emea_1 = filter(velocity_emea_1, !is.na(country))
+
+velocity_emea_1 = filter(velocity_emea_1, crop_name %in% c("Corn"))
+
+velocity_emea_2 = velocity_emea_1 %>% collect()
+
+triats_all = velocity_emea_2 %>% dplyr::select(observation_ref_cd, observation_name) %>% unique()
+
+#%>% collect()
+
+
+traits = c("YLD","SYLD")
+
+velocity_emea_3 = filter(velocity_emea_2, observation_ref_cd %in% traits)
+
+velocity_emea_3 = filter(velocity_emea_3, !is.na(field_name))
+
+table(velocity_emea_3$is_deactivated)
+table(velocity_emea_3$is_plot_deactivated)
+table(velocity_emea_3$is_dsr_deactivated)
+velocity_emea_3 = filter(velocity_emea_3,is_deactivated==FALSE )
+velocity_emea_3 = filter(velocity_emea_3,is_dsr_deactivated==FALSE )
+table(velocity_emea_3$is_rejected)
+table(velocity_emea_3$is_abandoned)
+velocity_emea_3 = filter(velocity_emea_3,is_abandoned==FALSE )
+
+table(velocity_emea_3$is_deactivated)
+table(velocity_emea_3$is_plot_deactivated)
+table(velocity_emea_3$is_dsr_deactivated)
+table(velocity_emea_3$is_rejected)
+
+#velocity_emea_3 = filter(velocity_emea_3,is.na() )
+velocity_emea_3$value = as.double(velocity_emea_3$num_value)
+#velocity_emea_3$value = as.double(velocity_emea_3$value)
+
+
+velocity_emea_4 = filter(velocity_emea_3,country=="Czech Republic" )
+
+write_csv(velocity_emea_4,"Czechia_fact_data_2022.csv")
+
+
+velocity_emea_4 = filter(velocity_emea_3,country=="Spain" )
+
+write_csv(velocity_emea_4,"Spain_fact_data_2022.csv")
+
+
+velocity_emea_4 = filter(velocity_emea_3,country=="Greece" )
+
+write_csv(velocity_emea_4,"Greece_fact_data_2022.csv")
+
+
+velocity_emea_4 = filter(velocity_emea_3,country=="Italy" )
+
+write_csv(velocity_emea_4,"Italy_silage_fact_data_2022.csv")
+
+velocity_emea_4 = filter(velocity_emea_3,country=="Turkey" )
+
+write_csv(velocity_emea_4,"turkey_silage_fact_data_2022.csv")
+
+velocity_emea_4 = filter(velocity_emea_3,country=="Portugal" )
+
+write_csv(velocity_emea_4,"Portugal_silage_fact_data_2022.csv")
+
+velocity_emea_4 = filter(velocity_emea_3,country=="Romania" )
+
+write_csv(velocity_emea_4,"Romania_fact_data_2022.csv")
+
+velocity_emea_5 = filter(velocity_emea_3,country=="Hungary" )
+
+write_csv(velocity_emea_5,"Hungary_fact_data_2022.csv")
+
+
+
+velocity_emea_7 = filter(velocity_emea_3,country=="France" )
+
+write_csv(velocity_emea_7,"France_fact_data_2022.csv")
+
+velocity_emea_8 = filter(velocity_emea_3,country=="Ukraine" )
+
+write_csv(velocity_emea_8,"Ukraine_fact_data_2022.csv")
+
+
+
+```
+
+
+
+
+
+
+```{r message=FALSE,warnings=FALSE,echo=F,eval=F}
+con <- dbConnect(
+  bigquery(),
+  project = "bcs-global-md-fi-lake",
+  dataset = "field_trial"
+)
+
+
+plot_current <- tbl(con, "v_velocity_br_all")
+
+velocity_emea_1 = filter(plot_current,regional_hub=="Europe Middle East Africa")
+
+#countries = c("Romania","France","Hungary","Ukraine","Italy","Poland")
+
+countries = c("Czechia","Spain","Greece","Italy","Türkiye","Portugal")
+
+velocity_emea_1 = filter(velocity_emea_1,organization=="Market Development")
+
+velocity_emea_1 = filter(velocity_emea_1,originating_country%in% countries)
+
+velocity_emea_1 = filter(velocity_emea_1,planting_year==2024) 
+
+velocity_emea_2 = velocity_emea_1 %>% collect()
+
+#%>% collect()
+velocity_emea_2 = filter(velocity_emea_2, !crops %in% c("OSR-Canola","TRZAW - Wheat, winter"))
+
+traits = c("GYLD","SYLD")
+
+velocity_emea_3 = filter(velocity_emea_2, questioncode %in% traits)
+
+velocity_emea_3 = filter(velocity_emea_3, !is.na(field_name))
+
+table(velocity_emea_3$isdeactivated)
+table(velocity_emea_3$ese_isdeactivated)
+velocity_emea_3 = filter(velocity_emea_3,isdeactivated=="False" )
+#velocity_emea_3 = filter(velocity_emea_3,is.na() )
+velocity_emea_3$value = as.double(velocity_emea_3$value)
+velocity_emea_3$value = as.double(velocity_emea_3$value)
+
+
+velocity_emea_4 = filter(velocity_emea_3,originating_country=="Czechia" )
+
+write_csv(velocity_emea_4,"Czechia_fact_data_2024.csv")
+
+
+velocity_emea_4 = filter(velocity_emea_3,originating_country=="Spain" )
+
+write_csv(velocity_emea_4,"Spain_fact_data_2024.csv")
+
+
+velocity_emea_4 = filter(velocity_emea_3,originating_country=="Greece" )
+
+write_csv(velocity_emea_4,"Greece_fact_data_2024.csv")
+
+
+velocity_emea_4 = filter(velocity_emea_3,originating_country=="Italy" )
+
+write_csv(velocity_emea_4,"Italy_silage_fact_data_2024.csv")
+
+velocity_emea_4 = filter(velocity_emea_3,originating_country=="Türkiye" )
+
+write_csv(velocity_emea_4,"turkey_silage_fact_data_2024.csv")
+
+velocity_emea_4 = filter(velocity_emea_3,originating_country=="Portugal" )
+
+write_csv(velocity_emea_4,"Portugal_silage_fact_data_2024.csv")
+
+velocity_emea_4 = filter(velocity_emea_3,originating_country=="Romania" )
+
+write_csv(velocity_emea_4,"Romania_fact_data_2024.csv")
+
+velocity_emea_5 = filter(velocity_emea_3,originating_country=="Hungary" )
+
+write_csv(velocity_emea_5,"Hungary_fact_data_2024.csv")
+
+velocity_emea_6 = filter(velocity_emea_3,originating_country=="Poland" )
+
+write_csv(velocity_emea_6,"Poland_fact_data_2024.csv")
+
+velocity_emea_7 = filter(velocity_emea_3,originating_country=="France" )
+
+write_csv(velocity_emea_7,"France_fact_data_2024.csv")
+
+velocity_emea_8 = filter(velocity_emea_3,originating_country=="Ukraine" )
+
+write_csv(velocity_emea_8,"Ukraine_fact_data_2024.csv")
+
+
+velocity_emea_9 = filter(velocity_emea_3,originating_country=="Italy" )
+
+write_csv(velocity_emea_9,"Italy_fact_data_2024.csv")
+
+velocity_emea_4_mutate = velocity_emea_3 %>% group_by(field_name) %>% mutate(number_of_hybrids_test= length(unique(product_name)),mean_yield=mean(value, na.rm=T), sd_yield=sd(value, na.rm=T), CV=(sd_yield/mean_yield)*100,min_yield= min(value),max_yield=max(value),min_difference_percent=((mean_yield-min_yield)/mean_yield)*100,max_difference_percent=((max_yield-mean_yield)/mean_yield)*100,yield_diff=value-mean_yield,min_yield_diff= min(yield_diff),max_yield_diff=max(yield_diff))
+
+velocity_emea_4_summary = velocity_emea_4_mutate %>% group_by(originating_country,state, county, l3_name,market,sub_market,testing_stage,key_terms,requester, answer_user_id,submission_id,field_name,sub_site_id,randomizationStrategyCode,total_area,total_area_uom,plot_length,plot_width,set_name, experiment_name,setid, rep, block_id,questioncode,uomcode,maturity) %>% summarise(number_of_hybrids_test= length(unique(product_name)),mean_yield=mean(value, na.rm=T), sd_yield=sd(value, na.rm=T), CV=(sd_yield/mean_yield)*100,min_yield= min(value),max_yield=max(value),min_difference_percent=((mean_yield-min_yield)/mean_yield)*100,max_difference_percent=((max_yield-mean_yield)/mean_yield)*100, min_yield_diff= min(min_yield_diff),max_yield_diff=max(max_yield_diff))
+
+velocity_emea_4_summary = velocity_emea_4_summary %>% group_by(experiment_name) %>% mutate(number_of_fields= length(unique(field_name)),mean_CV_per_experiment= mean(CV),min_CV_per_experiment= min(CV),max_CV_per_experiment= max(CV),mean_yield_expt=mean(mean_yield, na.rm=T), sd_yield_expt=sd(mean_yield, na.rm=T),minimum_yield_diff=min(min_yield_diff),maximum_yield_diff=max(max_yield_diff),minimum_yield_diff_percent=((minimum_yield_diff)/mean_yield_expt)*100,maximum_yield_diff_percent=((maximum_yield_diff)/mean_yield_expt)*100)
+
+
+velocity_emea_4_summary = velocity_emea_3 %>% group_by(originating_country,state, county, l3_name,market,sub_market,testing_stage,key_terms,requester, answer_user_id,submission_id,field_name,sub_site_id,randomizationStrategyCode,total_area,total_area_uom,plot_length,plot_width,set_name, experiment_name,setid, rep, block_id,questioncode,uomcode,maturity) %>% summarise(number_of_hybrids_test= length(unique(product_name)),mean_yield=mean(value, na.rm=T), sd_yield=sd(value, na.rm=T), CV=(sd_yield/mean_yield)*100,min_yield= min(value),max_yield=max(value),min_difference_percent=((mean_yield-min_yield)/mean_yield)*100,max_difference_percent=((max_yield-mean_yield)/mean_yield)*100)
+
+#velocity_emea_4_summary = filter(velocity_emea_4_summary,originating_country=="Romania" )
+
+
+velocity_emea_4_summary = velocity_emea_4_summary %>% group_by(experiment_name) %>% mutate(number_of_fields= length(unique(field_name)),mean_CV_per_experiment= mean(CV),min_CV_per_experiment= min(CV),max_CV_per_experiment= max(CV),mean_yield_expt=mean(mean_yield, na.rm=T), sd_yield_expt=sd(mean_yield, na.rm=T),min_difference_percent_expt=mean(min_difference_percent),max_difference_percent_expt=mean(max_difference_percent))
+
+field_test = filter(velocity_emea_3,field_name=="2024_CG_ROU_CP_RM105_SANICOLAU MARE")
+
+field_test$value = as.double(field_test$value)
+
+model= lm(value~product_name, data=field_test)
+
+sqrt(mean(model$residuals^2))
+
+library(SpATS)
+model <- SpATS(response = "value", 
+                 spatial = ~ PSANOVA(ranges, columns),
+                 genotype = "product_name", 
+                 data = field_test)
+
+protocols = velocity_emea_2 %>% dplyr::select(organization,season,requester,planting_year,crops,originating_country,experiment_name,field_name) %>% unique()
+
+protocols = filter(protocols, !is.na(field_name))
+
+
+```
+
+
+## Italy - 2022 trials
+
+```{r message=FALSE, warning=FALSE, echo=FALSE}
+library(readr)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(lmerTest)
+library(multcompView)
+
+source("/mnt/codes/PowerAnalysis_LxR_12Fgp.R")
+
+#write_csv(velocity_emea_4,"Romania_fact_data_2024.csv")
+
+velocity_emea_3 = read_csv("Italy_silage_fact_data_2022.csv")
+
+velocity_emea_3 = filter(velocity_emea_3, !protocol_title %in% c("2022 Corn Silage Alternating Check trials Italy TMT","2022 Corn Grain Alternating Check trials Italy TMT"))
+
+velocity_emea_3 = filter(velocity_emea_3, !is.na(protocol_title))
+
+
+unique(velocity_emea_3$uom)
+
+velocity_emea_3 = velocity_emea_3 %>% mutate(value = ifelse(uom=="Metric Tons/Hectare",value*10,value))
+
+velocity_emea_3_overall_summary = velocity_emea_3 %>% group_by(country,trial_year) %>% summarise(number_of_fields = length(unique(field_name)),number_of_hybrids_tested=length(unique(precommercial))) 
+
+DT::datatable(velocity_emea_3_overall_summary)
+
+velocity_emea_3_fields = velocity_emea_3 %>% dplyr::select(country,sub_country, sub_sub_country,region,field_name,experiment_design,p_plot_length,p_plot_width,set_name, protocol_title,protocol_name,observation_ref_cd,uom,product_rm ,commercial,precommercial,value,trial_year,protocol_description) %>% unique()
+
+velocity_emea_3_fields_summary = velocity_emea_3_fields %>% group_by(country,trial_year,protocol_title,protocol_description) %>% summarise(number_of_fields = length(unique(field_name)),number_of_hybrids_tested=length(unique(precommercial)), fields= paste(unique(field_name), collapse="; "),Hybrids= paste(unique(precommercial), collapse="; ") )
+
+DT::datatable(velocity_emea_3_fields_summary, filter="top")
+
+#fields with yield
+
+
+```
+
+
+
+### Calculating Coefficient of variation
+
+
+Low CV: Generally considered to be below 15.9%. This indicates low variability and high precision in the measurements or observations.
+
+Medium CV: Ranges from approximately 16% to 30%. This suggests moderate variability, indicating that there is some inconsistency in the data.
+
+High CV: Values above 30%, which indicate high variability and lower precision in the measurements.
+
+
+```{r message=FALSE, warning=FALSE, echo=FALSE}
+
+#velocity_emea_3 = filter(velocity_emea_3, questioncode=="GYLD")
+
+
+velocity_emea_3 = as.data.frame(velocity_emea_3)
+
+
+
+
+velocity_emea_4_field_summary= velocity_emea_3 %>% group_by(protocol_title,field_name,set_name,uom) %>% dplyr::summarise(number_of_hybrids_test= length(unique(precommercial)),mean_yield=mean(value, na.rm=T), sd_yield=sd(value, na.rm=T), Raw_CV=(sd_yield/mean_yield)*100)
+
+DT::datatable(velocity_emea_4_field_summary, filter="top")
+
+velocity_emea_3 = as.data.frame(velocity_emea_3)
+
+
+velocity_emea_4_field_summary= velocity_emea_3 %>% group_by(protocol_title,uom) %>% dplyr::summarise(number_of_hybrids_test= length(unique(precommercial)),mean_yield=mean(value, na.rm=T), sd_yield=sd(value, na.rm=T), Raw_CV=(sd_yield/mean_yield)*100)
+
+#DT::datatable(velocity_emea_4_field_summary, filter="top")
+
+velocity_emea_4_mutate = velocity_emea_3 %>% group_by(field_name) %>% mutate(number_of_hybrids_test= length(unique(precommercial)),mean_yield=mean(value, na.rm=T), sd_yield=sd(value, na.rm=T), CV=(sd_yield/mean_yield)*100,min_yield= min(value),max_yield=max(value),min_difference_percent=((mean_yield-min_yield)/mean_yield)*100,max_difference_percent=((max_yield-mean_yield)/mean_yield)*100,yield_diff=value-mean_yield,yield_diff_percent=(yield_diff/mean_yield)*100,min_yield_diff= min(yield_diff),max_yield_diff=max(yield_diff),mean_yield_diff=mean(abs(yield_diff)),mean_yield_diff_percent=mean(abs(yield_diff_percent)))
+
+#velocity_emea_4_summary = velocity_emea_4_mutate %>% group_by(originating_country,state, county, l3_name,market,sub_market,testing_stage,key_terms,requester, answer_user_id,submission_id,field_name,sub_site_id,randomizationStrategyCode,total_area,total_area_uom,plot_length,plot_width,set_name, experiment_name,setid, rep, block_id,questioncode,uomcode,maturity) %>% summarise(number_of_hybrids_test= length(unique(product_name)),mean_yield=mean(value, na.rm=T), sd_yield=sd(value, na.rm=T), CV=(sd_yield/mean_yield)*100,min_yield= min(value),max_yield=max(value),min_difference_percent=((mean_yield-min_yield)/mean_yield)*100,max_difference_percent=((max_yield-mean_yield)/mean_yield)*100, min_yield_diff= min(min_yield_diff),max_yield_diff=max(max_yield_diff))
+
+velocity_emea_4_summary = velocity_emea_4_mutate %>% group_by(protocol_title,uom) %>% summarise(number_of_hybrids_test= length(unique(precommercial)),number_of_fields= length(unique(field_name)),mean_expt_yield = mean(mean_yield),sd_expt_yield = sd(mean_yield),mean_CV_per_experiment= mean(CV),min_CV_per_experiment= min(CV),max_CV_per_experiment= max(CV),minimum_yield_diff=min(min_yield_diff),maximum_yield_diff=max(max_yield_diff),minimum_yield_diff_percent=min(min_difference_percent),maximum_yield_diff_percent=max(max_difference_percent),mean_maximum_difference_percent=(mean(maximum_yield_diff_percent)),mean_yield_difference=(mean(mean_yield_diff)),mean_yield_difference_percent=(mean(mean_yield_diff_percent)))
+```
+
+### Power Analysis
+
+```{r message=FALSE, warning=FALSE, echo=FALSE,fig.height=7, fig.width=15}
+velocity_emea_3$product_name = velocity_emea_3$precommercial
+
+velocity_emea_3 = filter(velocity_emea_3, !is.na(product_name))
+
+expt = unique(velocity_emea_4_summary$protocol_title)
+
+for (i in 1:length(expt)){
+  expt1 = filter(velocity_emea_3,protocol_title==expt[i])
+
+expt1_summary=velocity_emea_4_summary %>% filter(protocol_title==expt[i])
+
+mean_yield_difference = round(expt1_summary$mean_yield_difference,1)
+mean_yield_difference_percent = round(expt1_summary$mean_yield_difference_percent,1)
+number_of_fields = expt1_summary$number_of_fields
+number_of_hybrids_test = expt1_summary$number_of_hybrids_test
+
+#velocity_emea_4_summary
+
+ model_1 = lmer(value ~ as.factor(product_name)  + (1|field_name),data=expt1)
+#summary(model_1)
+library(sjstats)
+rmse_1=rmse(model_1)
+mean_1=mean(expt1$value)
+
+cv_1 = (rmse_1/mean_1)*100
+
+cv_1
+
+
+expdesign="F11"; minrep=2;  maxrep=40;  cv=round(cv_1,2);  ckmean=round(mean_1,2);   rLGvsE=30; nsub=1;
+ntrt1=number_of_hybrids_test;  ntrt2=3; alpha=0.1; mindp=1; maxdp=14;  bydp=1 ; trait.name="YLD"; 
+
+result=power.12F.LocxRep(expdesign, expt1$protocol_title[1],number_of_fields,number_of_hybrids_test,mean_yield_difference_percent,ckmean, cv, rLGvsE, nsub, ntrt1, ntrt2, 
+                      alpha, minrep, maxrep, mindp, maxdp, bydp,  trait.name)
+plot=result$plot1
+print(plot)
+print(result$expInfo)
+print(result$tab1)
+
+}
+
+
+```
+
+
+```{r message=FALSE, warning=FALSE, echo=FALSE,fig.height=7, fig.width=15,eval=F}
+
+
+velocity_emea_3$product_name = velocity_emea_3$precommercial
+
+velocity_emea_3 = filter(velocity_emea_3, !is.na(product_name))
+velocity_emea_3 = filter(velocity_emea_3, !is.na(value))
+expt1 = filter(velocity_emea_3,protocol_title=="2022 corn FACT GRAIN ME6 ITA_6/7 SPINTA PROD B\n\n\n\n")
+
+expt1_summary=velocity_emea_4_summary %>% filter(protocol_title=="2022 corn FACT GRAIN ME6 ITA_6/7 SPINTA PROD B\n\n\n\n")
+
+mean_yield_difference = round(expt1_summary$mean_yield_difference,1)
+mean_yield_difference_percent = round(expt1_summary$mean_yield_difference_percent,1)
+number_of_fields = expt1_summary$number_of_fields
+number_of_hybrids_test = expt1_summary$number_of_hybrids_test
+
+#velocity_emea_4_summary
+
+ model_1 = lmer(value ~ as.factor(product_name)  + (1|field_name),data=expt1)
+#summary(model_1)
+library(sjstats)
+rmse_1=rmse(model_1)
+mean_1=mean(expt1$value)
+
+cv_1 = (rmse_1/mean_1)*100
+
+cv_1
+
+
+expdesign="F11"; minrep=2;  maxrep=40;  cv=round(cv_1,2);  ckmean=round(mean_1,2);   rLGvsE=30; nsub=1;
+ntrt1=number_of_hybrids_test;  ntrt2=3; alpha=0.1; mindp=1; maxdp=14;  bydp=1 ; trait.name="YLD"; 
+
+result=power.12F.LocxRep(expdesign, expt1$protocol_title[1],number_of_fields,number_of_hybrids_test,mean_yield_difference_percent,ckmean, cv, rLGvsE, nsub, ntrt1, ntrt2, 
+                      alpha, minrep, maxrep, mindp, maxdp, bydp,  trait.name)
+plot=result$plot1
+plot
+result$expInfo
+result$tab1
+
+
+#per experiment
+expt1 = filter(velocity_emea_3,protocol_title=="2022 corn FACT GRAIN ME6 ITA_5/6 SPINTA PROD A\n\n\n")
+
+expt1_summary=velocity_emea_4_summary %>% filter(protocol_title=="2022 corn FACT GRAIN ME6 ITA_5/6 SPINTA PROD A\n\n\n")
+
+mean_yield_difference = round(expt1_summary$mean_yield_difference,1)
+mean_yield_difference_percent = round(expt1_summary$mean_yield_difference_percent,1)
+number_of_fields = expt1_summary$number_of_fields
+number_of_hybrids_test = expt1_summary$number_of_hybrids_test
+
+#velocity_emea_4_summary
+
+ model_1 = lmer(value ~ as.factor(product_name)  + (1|field_name),data=expt1)
+#summary(model_1)
+library(sjstats)
+rmse_1=rmse(model_1)
+mean_1=mean(expt1$value)
+
+cv_1 = (rmse_1/mean_1)*100
+
+cv_1
+
+
+expdesign="F11"; minrep=2;  maxrep=40;  cv=round(cv_1,2);  ckmean=round(mean_1,2);   rLGvsE=30; nsub=1;
+ntrt1=number_of_hybrids_test;  ntrt2=3; alpha=0.1; mindp=1; maxdp=14;  bydp=1 ; trait.name="YLD"; 
+
+result=power.12F.LocxRep(expdesign, expt1$protocol_title[1],number_of_fields,number_of_hybrids_test,mean_yield_difference_percent,ckmean, cv, rLGvsE, nsub, ntrt1, ntrt2, 
+                      alpha, minrep, maxrep, mindp, maxdp, bydp,  trait.name)
+plot=result$plot1
+plot
+result$expInfo
+result$tab1
+
+expt1 = filter(velocity_emea_3,protocol_title=="2022 corn FACT GRAIN ME6 ITA_3/4 RUSTICITA\n\n\n")
+
+expt1_summary=velocity_emea_4_summary %>% filter(protocol_title=="2022 corn FACT GRAIN ME6 ITA_3/4 RUSTICITA\n\n\n")
+
+mean_yield_difference = round(expt1_summary$mean_yield_difference,1)
+mean_yield_difference_percent = round(expt1_summary$mean_yield_difference_percent,1)
+number_of_fields = expt1_summary$number_of_fields
+number_of_hybrids_test = expt1_summary$number_of_hybrids_test
+
+#velocity_emea_4_summary
+
+ model_1 = lmer(value ~ as.factor(product_name)  + (1|field_name),data=expt1)
+#summary(model_1)
+library(sjstats)
+rmse_1=rmse(model_1)
+mean_1=mean(expt1$value)
+
+cv_1 = (rmse_1/mean_1)*100
+
+cv_1
+
+
+expdesign="F11"; minrep=2;  maxrep=40;  cv=round(cv_1,2);  ckmean=round(mean_1,2);   rLGvsE=30; nsub=1;
+ntrt1=number_of_hybrids_test;  ntrt2=3; alpha=0.1; mindp=1; maxdp=14;  bydp=1 ; trait.name="YLD"; 
+
+result=power.12F.LocxRep(expdesign, expt1$protocol_title[1],number_of_fields,number_of_hybrids_test,mean_yield_difference_percent,ckmean, cv, rLGvsE, nsub, ntrt1, ntrt2, 
+                      alpha, minrep, maxrep, mindp, maxdp, bydp,  trait.name)
+plot=result$plot1
+plot
+result$expInfo
+result$tab1
+expt1 = filter(velocity_emea_3,protocol_title=="2022 corn FACT GRAIN ME6 ITA_4/5 FLESSIBILITA\n\n\n" )
+
+expt1_summary=velocity_emea_4_summary %>% filter(protocol_title=="2022 corn FACT GRAIN ME6 ITA_4/5 FLESSIBILITA\n\n\n" )
+
+mean_yield_difference = round(expt1_summary$mean_yield_difference,1)
+mean_yield_difference_percent = round(expt1_summary$mean_yield_difference_percent,1)
+number_of_fields = expt1_summary$number_of_fields
+number_of_hybrids_test = expt1_summary$number_of_hybrids_test
+
+#velocity_emea_4_summary
+
+ model_1 = lmer(value ~ as.factor(product_name)  + (1|field_name),data=expt1)
+#summary(model_1)
+library(sjstats)
+rmse_1=rmse(model_1)
+mean_1=mean(expt1$value)
+
+cv_1 = (rmse_1/mean_1)*100
+
+cv_1
+
+
+expdesign="F11"; minrep=2;  maxrep=40;  cv=round(cv_1,2);  ckmean=round(mean_1,2);   rLGvsE=30; nsub=1;
+ntrt1=number_of_hybrids_test;  ntrt2=3; alpha=0.1; mindp=1; maxdp=14;  bydp=1 ; trait.name="YLD"; 
+
+result=power.12F.LocxRep(expdesign, expt1$protocol_title[1],number_of_fields,number_of_hybrids_test,mean_yield_difference_percent,ckmean, cv, rLGvsE, nsub, ntrt1, ntrt2, 
+                      alpha, minrep, maxrep, mindp, maxdp, bydp,  trait.name)
+plot=result$plot1
+plot
+result$expInfo
+result$tab1
+
+
+expt1 = filter(velocity_emea_3,protocol_title=="2021 corn D_FACT Silage  ME6 ITA RM105-113\n\n\n\n" )
+
+expt1_summary=velocity_emea_4_summary %>% filter(protocol_title=="2021 corn D_FACT Silage  ME6 ITA RM105-113\n\n\n\n" )
+
+mean_yield_difference = round(expt1_summary$mean_yield_difference,1)
+mean_yield_difference_percent = round(expt1_summary$mean_yield_difference_percent,1)
+number_of_fields = expt1_summary$number_of_fields
+number_of_hybrids_test = expt1_summary$number_of_hybrids_test
+
+#velocity_emea_4_summary
+
+ model_1 = lmer(value ~ as.factor(product_name)  + (1|field_name),data=expt1)
+#summary(model_1)
+library(sjstats)
+rmse_1=rmse(model_1)
+mean_1=mean(expt1$value)
+
+cv_1 = (rmse_1/mean_1)*100
+
+cv_1
+
+
+expdesign="F11"; minrep=2;  maxrep=40;  cv=round(cv_1,2);  ckmean=round(mean_1,2);   rLGvsE=30; nsub=1;
+ntrt1=number_of_hybrids_test;  ntrt2=3; alpha=0.1; mindp=1; maxdp=14;  bydp=1 ; trait.name="YLD"; 
+
+result=power.12F.LocxRep(expdesign, expt1$protocol_title[1],number_of_fields,number_of_hybrids_test,mean_yield_difference_percent,ckmean, cv, rLGvsE, nsub, ntrt1, ntrt2, 
+                      alpha, minrep, maxrep, mindp, maxdp, bydp,  trait.name)
+plot=result$plot1
+plot
+result$expInfo
+result$tab1
+
+
+
+expt1 = filter(velocity_emea_3,protocol_title=="2022 corn FACT SILAGE 2nd crop ME6 ITA\n\n\n\n" )
+
+expt1_summary=velocity_emea_4_summary %>% filter(protocol_title=="2022 corn FACT SILAGE 2nd crop ME6 ITA\n\n\n\n" )
+
+mean_yield_difference = round(expt1_summary$mean_yield_difference,1)
+mean_yield_difference_percent = round(expt1_summary$mean_yield_difference_percent,1)
+number_of_fields = expt1_summary$number_of_fields
+number_of_hybrids_test = expt1_summary$number_of_hybrids_test
+
+#velocity_emea_4_summary
+
+ model_1 = lmer(value ~ as.factor(product_name)  + (1|field_name),data=expt1)
+#summary(model_1)
+library(sjstats)
+rmse_1=rmse(model_1)
+mean_1=mean(expt1$value)
+
+cv_1 = (rmse_1/mean_1)*100
+
+cv_1
+
+
+expdesign="F11"; minrep=2;  maxrep=40;  cv=round(cv_1,2);  ckmean=round(mean_1,2);   rLGvsE=30; nsub=1;
+ntrt1=number_of_hybrids_test;  ntrt2=3; alpha=0.1; mindp=1; maxdp=14;  bydp=1 ; trait.name="YLD"; 
+
+result=power.12F.LocxRep(expdesign, expt1$protocol_title[1],number_of_fields,number_of_hybrids_test,mean_yield_difference_percent,ckmean, cv, rLGvsE, nsub, ntrt1, ntrt2, 
+                      alpha, minrep, maxrep, mindp, maxdp, bydp,  trait.name)
+plot=result$plot1
+plot
+result$expInfo
+result$tab1
+
+
+expt1 = filter(velocity_emea_3,protocol_title=="2022 corn FACT SILAGE 1st crop  ME6 ITA\n\n\n" )
+
+expt1_summary=velocity_emea_4_summary %>% filter(protocol_title=="2022 corn FACT SILAGE 1st crop  ME6 ITA\n\n\n" )
+
+mean_yield_difference = round(expt1_summary$mean_yield_difference,1)
+mean_yield_difference_percent = round(expt1_summary$mean_yield_difference_percent,1)
+number_of_fields = expt1_summary$number_of_fields
+number_of_hybrids_test = expt1_summary$number_of_hybrids_test
+
+#velocity_emea_4_summary
+
+ model_1 = lmer(value ~ as.factor(product_name)  + (1|field_name),data=expt1)
+#summary(model_1)
+library(sjstats)
+rmse_1=rmse(model_1)
+mean_1=mean(expt1$value)
+
+cv_1 = (rmse_1/mean_1)*100
+
+cv_1
+
+
+expdesign="F11"; minrep=2;  maxrep=40;  cv=round(cv_1,2);  ckmean=round(mean_1,2);   rLGvsE=30; nsub=1;
+ntrt1=number_of_hybrids_test;  ntrt2=3; alpha=0.1; mindp=1; maxdp=14;  bydp=1 ; trait.name="YLD"; 
+
+result=power.12F.LocxRep(expdesign, expt1$protocol_title[1],number_of_fields,number_of_hybrids_test,mean_yield_difference_percent,ckmean, cv, rLGvsE, nsub, ntrt1, ntrt2, 
+                      alpha, minrep, maxrep, mindp, maxdp, bydp,  trait.name)
+plot=result$plot1
+plot
+result$expInfo
+result$tab1
+
+
+expt1 = filter(velocity_emea_3,protocol_title=="2022 corn D_FACT Silage  ME6 ITA RM113-120\n\n\n\n" )
+
+expt1_summary=velocity_emea_4_summary %>% filter(protocol_title=="2022 corn D_FACT Silage  ME6 ITA RM113-120\n\n\n\n" )
+
+mean_yield_difference = round(expt1_summary$mean_yield_difference,1)
+mean_yield_difference_percent = round(expt1_summary$mean_yield_difference_percent,1)
+number_of_fields = expt1_summary$number_of_fields
+number_of_hybrids_test = expt1_summary$number_of_hybrids_test
+
+#velocity_emea_4_summary
+
+ model_1 = lmer(value ~ as.factor(product_name)  + (1|field_name),data=expt1)
+#summary(model_1)
+library(sjstats)
+rmse_1=rmse(model_1)
+mean_1=mean(expt1$value)
+
+cv_1 = (rmse_1/mean_1)*100
+
+cv_1
+
+
+expdesign="F11"; minrep=2;  maxrep=40;  cv=round(cv_1,2);  ckmean=round(mean_1,2);   rLGvsE=30; nsub=1;
+ntrt1=number_of_hybrids_test;  ntrt2=3; alpha=0.1; mindp=1; maxdp=14;  bydp=1 ; trait.name="YLD"; 
+
+result=power.12F.LocxRep(expdesign, expt1$protocol_title[1],number_of_fields,number_of_hybrids_test,mean_yield_difference_percent,ckmean, cv, rLGvsE, nsub, ntrt1, ntrt2, 
+                      alpha, minrep, maxrep, mindp, maxdp, bydp,  trait.name)
+plot=result$plot1
+plot
+result$expInfo
+result$tab1
+
+
+expt1 = filter(velocity_emea_3,protocol_title=="2022 corn D_FACT A  Grain  ME6 ITA RM100-115\n\n\n\n" )
+
+expt1_summary=velocity_emea_4_summary %>% filter(protocol_title=="2022 corn D_FACT A  Grain  ME6 ITA RM100-115\n\n\n\n" )
+
+mean_yield_difference = round(expt1_summary$mean_yield_difference,1)
+mean_yield_difference_percent = round(expt1_summary$mean_yield_difference_percent,1)
+number_of_fields = expt1_summary$number_of_fields
+number_of_hybrids_test = expt1_summary$number_of_hybrids_test
+
+#velocity_emea_4_summary
+
+ model_1 = lmer(value ~ as.factor(product_name)  + (1|field_name),data=expt1)
+#summary(model_1)
+library(sjstats)
+rmse_1=rmse(model_1)
+mean_1=mean(expt1$value)
+
+cv_1 = (rmse_1/mean_1)*100
+
+cv_1
+
+
+expdesign="F11"; minrep=2;  maxrep=40;  cv=round(cv_1,2);  ckmean=round(mean_1,2);   rLGvsE=30; nsub=1;
+ntrt1=number_of_hybrids_test;  ntrt2=3; alpha=0.1; mindp=1; maxdp=14;  bydp=1 ; trait.name="YLD"; 
+
+result=power.12F.LocxRep(expdesign, expt1$protocol_title[1],number_of_fields,number_of_hybrids_test,mean_yield_difference_percent,ckmean, cv, rLGvsE, nsub, ntrt1, ntrt2, 
+                      alpha, minrep, maxrep, mindp, maxdp, bydp,  trait.name)
+plot=result$plot1
+plot
+result$expInfo
+result$tab1
+
+
+expt1 = filter(velocity_emea_3,protocol_title=="2021 corn SSC FACT GRAIN ME6 ITA_6/7 \n\n\n\n" )
+
+expt1_summary=velocity_emea_4_summary %>% filter(protocol_title=="2021 corn SSC FACT GRAIN ME6 ITA_6/7 \n\n\n\n" )
+
+mean_yield_difference = round(expt1_summary$mean_yield_difference,1)
+mean_yield_difference_percent = round(expt1_summary$mean_yield_difference_percent,1)
+number_of_fields = expt1_summary$number_of_fields
+number_of_hybrids_test = expt1_summary$number_of_hybrids_test
+
+#velocity_emea_4_summary
+
+ model_1 = lmer(value ~ as.factor(product_name)  + (1|field_name),data=expt1)
+#summary(model_1)
+library(sjstats)
+rmse_1=rmse(model_1)
+mean_1=mean(expt1$value)
+
+cv_1 = (rmse_1/mean_1)*100
+
+cv_1
+
+
+expdesign="F11"; minrep=2;  maxrep=40;  cv=round(cv_1,2);  ckmean=round(mean_1,2);   rLGvsE=30; nsub=1;
+ntrt1=number_of_hybrids_test;  ntrt2=3; alpha=0.1; mindp=1; maxdp=14;  bydp=1 ; trait.name="YLD"; 
+
+result=power.12F.LocxRep(expdesign, expt1$protocol_title[1],number_of_fields,number_of_hybrids_test,mean_yield_difference_percent,ckmean, cv, rLGvsE, nsub, ntrt1, ntrt2, 
+                      alpha, minrep, maxrep, mindp, maxdp, bydp,  trait.name)
+plot=result$plot1
+plot
+result$expInfo
+result$tab1
+
+
+expt1 = filter(velocity_emea_3,protocol_title=="2022 corn SSC FACT SILAGE ME6 ITA\n\n\n" )
+
+expt1_summary=velocity_emea_4_summary %>% filter(protocol_title=="2022 corn SSC FACT SILAGE ME6 ITA\n\n\n" )
+
+mean_yield_difference = round(expt1_summary$mean_yield_difference,1)
+mean_yield_difference_percent = round(expt1_summary$mean_yield_difference_percent,1)
+number_of_fields = expt1_summary$number_of_fields
+number_of_hybrids_test = expt1_summary$number_of_hybrids_test
+
+#velocity_emea_4_summary
+
+ model_1 = lmer(value ~ as.factor(product_name)  + (1|field_name),data=expt1)
+#summary(model_1)
+library(sjstats)
+rmse_1=rmse(model_1)
+mean_1=mean(expt1$value)
+
+cv_1 = (rmse_1/mean_1)*100
+
+cv_1
+
+
+expdesign="F11"; minrep=2;  maxrep=40;  cv=round(cv_1,2);  ckmean=round(mean_1,2);   rLGvsE=30; nsub=1;
+ntrt1=number_of_hybrids_test;  ntrt2=3; alpha=0.1; mindp=1; maxdp=14;  bydp=1 ; trait.name="YLD"; 
+
+result=power.12F.LocxRep(expdesign, expt1$protocol_title[1],number_of_fields,number_of_hybrids_test,mean_yield_difference_percent,ckmean, cv, rLGvsE, nsub, ntrt1, ntrt2, 
+                      alpha, minrep, maxrep, mindp, maxdp, bydp,  trait.name)
+plot=result$plot1
+plot
+result$expInfo
+result$tab1
+```
+
+
+
