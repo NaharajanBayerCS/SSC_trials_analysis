@@ -1,0 +1,1537 @@
+---
+title: "SSC trials in Ebro"
+author: "Naharajan Lakshmanaperumal, Senior Data Scientist, EMEA L2 Agronomy"
+date: "23.04.2025"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+  word_document:
+    reference_docx: south_africa_variety_data_report_final.docx
+  beamer_presentation: default
+  pdf_document: default
+  slidy_presentation: default
+always_allow_html: yes
+---
+
+# Contents
+
+<div class="logos"><img src="/mnt/images/emea_md_logo_3.PNG" width="50px" align="right"></div>
+ 
+<div class="logos"><img src="/mnt/images/RZ_EMEA_Sign_Claim_Screen_RGB_on_white (1) (1).png" width="100px" align="right"></div>
+
+
+- Tensiometer and Lysimeter trials in Ebro, Spain 
+
+- Data Summary
+
+- Exploratory data analysis
+
+- Statistical data analysis
+  
+- Summary
+
+<div class="logos"><img src="/mnt/images/restricted.PNG" width="100px" align="right"></div>
+
+
+# Tensiometer and Lysimeter trials in Ebro, Spain
+
+## Tensiometer
+
+- 2 locations Valtierra & Almudevar
+
+- 1 ssc ( DKC6836SC) and 1 tall (DKC6228 in Valtierra, DKC6980 in Almudevar).  
+
+- Weenat study. 2 locs x 2 hybrids x 3 reps x 3 Depth (30,60 and 90 cm).  
+
+- Daily Data collected:  Hydrid Potential kPa at 30cm, 60 cm and 90 cm  
+
+- Data recorded: BBCH, Irrigation, radiation, temperature max and min, soil temperatureat 30,60 and 90 cm, Evapotranspiration, GDD  
+
+- From 28 of may (BBCH 10) till 30 of September (BBCH 29)
+
+## Lysimeter 
+
+
+- 2 locations Valtierra & Almudevar  
+
+- 1 ssc ( DKC6836SC) and 1 tall (DKC6228 in Valtierra, DKC6980 in Almudevar).
+
+Water extraction:   
+
+- From 10th June to October, weekly   
+- 2 locs x 2 hybrids x 2 Depth (30,60cm) X 1-3 reps  
+- Data collected:ph, EC, K,Ca, Na, NO3  
+- Leaf sampling sap: young and old leaves.  
+- From June to October, weekly  
+- 2 locs x 2 hybrids   
+- Data collected:Sugar, ph, EC, K,Ca, k/ca, Mg,  Na, NH4, NO3, N, Cl, Si, Fe, MN, Zn, Cu, Mo Al  
+
+
+Other data collected. Data recorded: BBCH, Irrigation, radiation, temperature max and min, soil temperatureat 30,60 and 90 cm, Evapotranspiration, GDD
+
+
+
+# Data Summary
+
+
+```{r message=FALSE, warning=FALSE, echo=F}
+library(readxl)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(lmerTest)
+library(stringr)
+
+turkey_data_irr = read_excel("/mnt/data/Row data Lysimeter tensiometer wheather for Naha.xlsx",sheet=2)
+
+
+unique(turkey_data_irr$LOCATION )
+unique(turkey_data_irr$VARIETY)
+
+summary(turkey_data_irr$BBCH)
+
+summary(turkey_data_irr$DATE)
+
+
+summary(turkey_data_irr$`Irrigation/Precipitation (mm)`)
+#turkey_data_irr = read_excel("/mnt/data/SSC Irricagation results final v3 revized.xlsx",skip=3)
+
+names(turkey_data_irr)[7] = "replicate"
+
+p <- ggplot(turkey_data_irr, aes(x=as.Date(DATE), y=`Hydric potential (kPa) 30 cm`, color=VARIETY,alpha=0.5)) +
+  geom_line() + 
+  xlab("")+ggtitle("Soil moisture - Raw data")+facet_grid(~LOCATION)
+#plotly::ggplotly(p)
+
+p <- ggplot(turkey_data_irr, aes(x=BBCH, y=`Hydric potential (kPa) 30 cm`, color=VARIETY,alpha=0.5)) +
+  geom_line() + 
+  xlab("")+ggtitle("Soil moisture - Raw data")+facet_grid(~LOCATION)
+#plotly::ggplotly(p)
+
+turkey_data_irr_summary = turkey_data_irr %>% group_by(LOCATION,DATE,VARIETY) %>% mutate(number_of_data_points = n())
+
+hydric_potential = turkey_data_irr %>% dplyr::select(DATE,LOCATION,VARIETY,BBCH,replicate,`Hydric potential (kPa) 30 cm`,`Hydric potential (kPa) 60 cm`,`Hydric potential (kPa) 90 cm` ,`Evapotranspiration (mm)`, `Accumulated degree days`  )
+
+hydric_potential_long = hydric_potential %>% gather(type, value,6:10)
+
+hydric_potential_long = hydric_potential_long %>% filter(!is.na(value))
+
+#outlier screening
+
+hydric_potential_long= hydric_potential_long %>% group_by(DATE,LOCATION,VARIETY,type) %>% mutate(number_of_data_points= n())
+
+hydric_potential_long_1 = filter(hydric_potential_long, number_of_data_points>1)
+                                                                                                 
+hydric_potential_long_1= hydric_potential_long_1 %>% group_by(DATE,LOCATION,VARIETY,type) %>% mutate(mean_value=mean(value,na.rm=T),sd_value=sd(value,na.rm=T),yield_upper_sd_filter = mean_value+2.5*sd_value,yield_lower_sd_filter = mean_value-2.5*sd_value)
+
+
+  
+   hydric_potential_long_1 = hydric_potential_long_1 %>% mutate(value_sd_filter= ifelse(value>yield_upper_sd_filter,"TRUE",ifelse(value<yield_lower_sd_filter,"TRUE","FALSE")))
+   
+   #hydric_potential_long_2 = filter(hydric_potential_long_1, type=="Hydric potential (kPa) 30 cm")
+   
+   hydric_potential_long_1_summary= hydric_potential_long_1 %>% group_by(DATE,LOCATION,VARIETY,type)%>% mutate(mean_value=mean(value,na.rm=T))
+
+  hydric_potential_long_1_summary = hydric_potential_long_1_summary %>% mutate(trait= ifelse(type %in% c("Hydric potential (kPa) 30 cm","Hydric potential (kPa) 60 cm","Hydric potential (kPa) 90 cm"),"hydric_potential",type))   
+
+
+rain_data = turkey_data_irr %>% dplyr::select(DATE,LOCATION,`Irrigation/Precipitation (mm)`)
+
+#rain_data = rain_data%>% filter(date<="2023-09-15")
+
+rain_data = rain_data%>% filter(`Irrigation/Precipitation (mm)`>0)
+
+rain_data = rain_data %>% mutate(rain_class= ifelse(`Irrigation/Precipitation (mm)`<0.5, "Irrigation/Precipitation<0.5mm",ifelse(`Irrigation/Precipitation (mm)`<5, "Irrigation/Precipitation (mm):0.5-5mm",ifelse(`Irrigation/Precipitation (mm)`<15, "Irrigation/Precipitation (mm):5-15mm",ifelse(`Irrigation/Precipitation (mm)`>=15, "Irrigation/Precipitation (mm): >15mm",NA)))))
+
+rain_data_1 = filter(rain_data, rain_class %in% c("Irrigation/Precipitation (mm):5-10mm","Irrigation/Precipitation (mm): >15mm") )
+
+hydric_potential_long_1_summary_hydric = filter(hydric_potential_long_1_summary, trait=="hydric_potential")
+
+
+#calculating WUE
+#For the WUE I think this is correct, but maybe you can use as units KG/mm3 to avoid so much decimals.
+
+
+
+```
+
+# Replicate comparison
+
+```{r message=FALSE, warning=FALSE, echo=F,fig.height=10,fig.width=10}
+
+hydric_potential_long_1_summary_hydric = hydric_potential_long_1_summary_hydric %>% unite(variety_rep, VARIETY,replicate, sep="_rep",remove=F)
+
+#rain_data_loc1 = filter(rain_data_1, LOCATION=="ALMUDEVAR" )
+#rain_data_loc1_all = filter(rain_data, LOCATION=="ALMUDEVAR" )
+
+hydric_potential_long_1_summary_hydric_1 = filter(hydric_potential_long_1_summary_hydric,LOCATION=="ALMUDEVAR")
+
+p <- ggplot(hydric_potential_long_1_summary_hydric_1, aes(x=as.Date(DATE), y=value, color=variety_rep,alpha=0.5)) +
+  geom_line() + 
+  xlab("")+ggtitle("Hydric Potential (Kpa) at different soil depths per Variety and replicate")+facet_grid(type~LOCATION)+ylab("Hydric potential (Kpa)")
+plotly::ggplotly(p)
+
+
+
+hydric_potential_long_1_summary_hydric_1 = filter(hydric_potential_long_1_summary_hydric,LOCATION!="ALMUDEVAR")
+
+p <- ggplot(hydric_potential_long_1_summary_hydric_1, aes(x=as.Date(DATE), y=value, color=variety_rep,alpha=0.5)) +
+  geom_line() + 
+  xlab("")+ggtitle("Hydric Potential (Kpa) at different soil depths per Variety and replicate")+facet_grid(type~LOCATION)+ylab("Hydric potential (Kpa)")
+plotly::ggplotly(p)
+
+```
+
+- Removal of data points with one replicate per day
+
+- SD outlier filtering for 2 and 3 replicates per day
+
+- No SD based outliers were found for Tensiometer based results
+
+
+
+# In location ALMUDEVAR
+
+```{r message=FALSE, warning=FALSE, echo=F,fig.height=10,fig.width=10}
+hydric_potential_long_1_summary_hydric_1 = filter(hydric_potential_long_1_summary_hydric,LOCATION=="ALMUDEVAR" )
+
+rain_data_loc1 = filter(rain_data_1, LOCATION=="ALMUDEVAR" )
+rain_data_loc1_all = filter(rain_data, LOCATION=="ALMUDEVAR" )
+
+rain_data_loc1_all = unique(rain_data_loc1_all)
+
+
+
+p <- ggplot(hydric_potential_long_1_summary_hydric_1, aes(x=as.Date(DATE), y=mean_value, color=VARIETY,alpha=0.5)) +
+  geom_line() + 
+  xlab("")+ggtitle("Hydric Potential (Kpa) at different soil depths per Variety")+facet_grid(type~LOCATION)+ylab("Hydric potential (Kpa)")
+plotly::ggplotly(p)
+
+g=ggplot(rain_data_loc1_all, aes(x=as.Date(DATE), y=`Irrigation/Precipitation (mm)`, fill=rain_class,alpha=0.5)) +
+  geom_bar(stat="identity") + 
+  xlab("")+ggtitle("Irrigation/Precipitation (mm) during the growing season")+facet_grid(~LOCATION)+ylab("Irrigation/Precipitation (mm)")
+print(g)
+
+p=p+geom_vline(data = rain_data_loc1,aes(xintercept = as.Date(DATE),color = rain_class), linetype = "dashed") + geom_text(data = rain_data_loc1,aes(x=as.Date(DATE), label="", y=1.5), colour="blue", angle=90, text=element_text(size=11))
+print(p)
+
+
+
+p <- ggplot(hydric_potential_long_1_summary_hydric_1, aes(x=as.Date(DATE), y=mean_value, color=VARIETY,alpha=0.5)) +
+  geom_line() + 
+  xlab("")+ggtitle("Hydric Potential (Kpa) at different soil depths per Variety")+facet_grid(type~LOCATION)+ylab("Hydric potential (Kpa)")
+#plotly::ggplotly(p)
+
+
+
+p=p+geom_vline(data = rain_data_loc1_all,aes(xintercept = as.Date(DATE),color = rain_class), linetype = "dashed") + geom_text(data = rain_data_loc1,aes(x=as.Date(DATE), label="", y=1.5), colour="blue", angle=90, text=element_text(size=11))
+print(p)
+
+
+p <- ggplot(hydric_potential_long_1_summary_hydric_1, aes(x=as.Date(DATE), y=mean_value, color=VARIETY,alpha=0.5)) +
+  geom_line() + 
+  xlab("")+ggtitle("Hydric Potential (Kpa) at different soil depths per Variety")+facet_grid(type~LOCATION)+ylab("Hydric potential (Kpa)")
+#plotly::ggplotly(p)
+
+
+
+```
+
+
+
+# In location Valtierra
+
+
+```{r message=FALSE, warning=FALSE, echo=F,fig.height=10,fig.width=10}
+hydric_potential_long_1_summary_hydric_1 = filter(hydric_potential_long_1_summary_hydric,LOCATION!="ALMUDEVAR" )
+
+rain_data_loc1 = filter(rain_data_1, LOCATION!="ALMUDEVAR" )
+rain_data_loc1_all = filter(rain_data, LOCATION!="ALMUDEVAR" )
+
+rain_data_loc1_all = unique(rain_data_loc1_all)
+
+
+
+p <- ggplot(hydric_potential_long_1_summary_hydric_1, aes(x=as.Date(DATE), y=mean_value, color=VARIETY,alpha=0.5)) +
+  geom_line() + 
+  xlab("")+ggtitle("Hydric Potential (Kpa) at different soil depths per Variety")+facet_grid(type~LOCATION)+ylab("Hydric potential (Kpa)")
+plotly::ggplotly(p)
+
+g=ggplot(rain_data_loc1_all, aes(x=as.Date(DATE), y=`Irrigation/Precipitation (mm)`, fill=rain_class,alpha=0.5)) +
+  geom_bar(stat="identity") + 
+  xlab("")+ggtitle("Irrigation/Precipitation (mm) during the growing season")+facet_grid(~LOCATION)+ylab("Irrigation/Precipitation (mm)")
+
+print(g)
+
+p=p+geom_vline(data = rain_data_loc1,aes(xintercept = as.Date(DATE),color = rain_class), linetype = "dashed") + geom_text(data = rain_data_loc1,aes(x=as.Date(DATE), label="", y=1.5), colour="blue", angle=90, text=element_text(size=11))
+print(p)
+
+
+
+p <- ggplot(hydric_potential_long_1_summary_hydric_1, aes(x=as.Date(DATE), y=mean_value, color=VARIETY,alpha=0.5)) +
+  geom_line() + 
+  xlab("")+ggtitle("Hydric Potential (Kpa) at different soil depths per Variety")+facet_grid(type~LOCATION)+ylab("Hydric potential (Kpa)")
+#plotly::ggplotly(p)
+
+
+
+p=p+geom_vline(data = rain_data_loc1_all,aes(xintercept = as.Date(DATE),color = rain_class), linetype = "dashed") + geom_text(data = rain_data_loc1,aes(x=as.Date(DATE), label="", y=1.5), colour="blue", angle=90, text=element_text(size=11))
+print(p)
+```
+
+
+
+# Statistical analysis - Amludevar location
+
+I will continue with the statistical analysis of hydric potential data at different soil depths between SSC vs Tall for the 3 time periods that you mentioned:
+-	15th of august to 24th august
+-	2nd September to 20th of September
+-	15th August till 20 of September
+
+```{r message=FALSE, warning=FALSE, echo=F}
+###Function which flags plot values with DSR > threshold for DSR traits 
+data_with_model_outlier_check_by_location = function(dataset, dsr.threshold){
+  outlier.df = NULL
+  for(i in 1:length(traits)){
+  #dataset$id = seq(1,dim(dataset)[1],1)
+    #print(traits[i])
+  ## Subsetting only for the DSR trait
+    temp = dataset %>% filter(type == traits[i])
+    temp$row_number=rownames(temp)
+  ## Subsetting based on missing data
+    #temp = temp[temp$MissingDataFlag==FALSE,]
+  
+  ## Fitting the simple model
+     model = lmer(value ~ as.factor(VARIETY)  + (1|replicate),data=temp)
+  
+  
+  ## Calculating Studentized residuals, and taking absolute values
+    Stud.Residual = abs(stats::rstudent(model))
+    #print(length(Stud.Residual))
+  ## Appending DSR values to the existing table
+    sr.df=as.data.frame(Stud.Residual)
+    sr.df$row_number=rownames(sr.df)
+    temp = temp%>% left_join(sr.df)
+    #temp = as.data.frame(cbind(temp,Stud.Residual))
+    temp$trait = traits[i]
+  
+  ## Flagging DSR outlier based on threshold
+    temp$DSR_by_location_outlier_flag = ifelse(abs(temp$Stud.Residual)>dsr.threshold,TRUE,FALSE)
+  
+  ## Merging with original dataset
+  #temp = temp[,c("id","Stud.Residual","DSR_outlier_flag")]
+  #dataset1 = merge(dataset,temp,by = "id", all.x = TRUE)
+  #dataset1 = dataset1[,-1]
+  outlier.df = rbind(outlier.df,temp)
+  }
+  return(outlier.df)
+}
+#model SSC vs DKC
+model_ssc_dkc = function(ssc_data_no_nas_ssc){
+ mmod <- lmer(value ~ Irrigation  * hybrid + (1|Location/Rep)+ (1|Location:Irrigation)+ +(1|Location:Irrigation:hybrid) ,data=ssc_data_no_nas_ssc)
+ 
+
+  lsm1 = emmeans::lsmeans(mmod,~Irrigation:hybrid)  
+  #lsm1 = emmeans::lsmeans(mmod,~Irrigation:interrow_width)  
+  lsm1.df = multcomp::cld(lsm1,alpha=0.1,Letters=LETTERS,sort=TRUE,adjust="tukey")
+  
+  lsm1.df = as.data.frame(lsm1.df)
+  
+#plot_lsmeans(lsm1.df)
+
+  lsm1 = emmeans::lsmeans(mmod,~Irrigation:hybrid)  
+
+delta1 = emmeans::contrast(lsm1,method="pairwise")
+  delta1.df = as.data.frame(summary(delta1,adjust="Tukey"))
+  delta1.df= delta1.df %>% mutate_if(is.numeric, round, 2)
+  delta1.df = delta1.df %>% mutate(Significance=ifelse(p.value<0.05, "Significant", ifelse(p.value >= 0.05 & p.value<0.1,"Significant","Not significant")))
+ 
+ print(anova(mmod))
+anv = as.data.frame(anova(mmod))
+  #Protocol = rep(unique(test.set$PROTOCOL),dim(anv)[1])
+ # Set = rep(unique(test.set$SET),dim(anv)[1])
+  #Effect = row.names(anv)
+  #anova.table = data.frame(Protocol,Effect,anv[,2:dim(anv)[2]])
+  anv$CV = sjstats::cv(mmod)*100
+  #anv$marginal_rsquared = round(MuMIn::r.squaredGLMM(model)[1],2)
+  #anv$rsquared = round(MuMIn::r.squaredGLMM(mmod)[2],2)
+  anv= anv %>% mutate_if(is.numeric, round, 3)
+  anv = anv %>% mutate(pvalue= format.pval(`Pr(>F)`,digits=2, eps=0.001, nsmall=3))
+  
+
+  
+  #lsm1 = emmeans::lsmeans(mmod,~Irrigation:interrow_width)  
+
+
+  return(list(anv,lsm1.df,delta1.df))
+ 
+}
+
+#model ssc vs dkc low yielding
+model_ssc_dkc_low = function(ssc_data_no_nas_ssc){
+  mmod <- lmer(value ~ Irrigation  * hybrid + (1|Rep) ,data=ssc_data_no_nas_ssc)
+ 
+
+  lsm1 = emmeans::lsmeans(mmod,~Irrigation:hybrid)  
+  #lsm1 = emmeans::lsmeans(mmod,~Irrigation:interrow_width)  
+  lsm1.df = multcomp::cld(lsm1,alpha=0.1,Letters=LETTERS,sort=TRUE,adjust="tukey")
+  
+  lsm1.df = as.data.frame(lsm1.df)
+  
+#plot_lsmeans(lsm1.df)
+
+  lsm1 = emmeans::lsmeans(mmod,~Irrigation:hybrid)  
+
+delta1 = emmeans::contrast(lsm1,method="pairwise")
+  delta1.df = as.data.frame(summary(delta1,adjust="Tukey"))
+  delta1.df= delta1.df %>% mutate_if(is.numeric, round, 2)
+  delta1.df = delta1.df %>% mutate(Significance=ifelse(p.value<0.05, "Significant", ifelse(p.value >= 0.05 & p.value<0.1,"Significant","Not significant")))
+ 
+ print(anova(mmod))
+anv = as.data.frame(anova(mmod))
+  #Protocol = rep(unique(test.set$PROTOCOL),dim(anv)[1])
+ # Set = rep(unique(test.set$SET),dim(anv)[1])
+  #Effect = row.names(anv)
+  #anova.table = data.frame(Protocol,Effect,anv[,2:dim(anv)[2]])
+  anv$CV = sjstats::cv(mmod)*100
+  #anv$marginal_rsquared = round(MuMIn::r.squaredGLMM(model)[1],2)
+  #anv$rsquared = round(MuMIn::r.squaredGLMM(mmod)[2],2)
+  anv= anv %>% mutate_if(is.numeric, round, 3)
+  anv = anv %>% mutate(pvalue= format.pval(`Pr(>F)`,digits=2, eps=0.001, nsmall=3))
+  
+
+  
+  #lsm1 = emmeans::lsmeans(mmod,~Irrigation:interrow_width)  
+
+
+  return(list(anv,lsm1.df,delta1.df))
+ 
+}
+
+#
+
+
+#lsmeans, delta for ssc only
+model_ssc_only = function(ssc_data_no_nas_ssc){
+ mmod = lmer(value ~ as.factor(VARIETY) + (1|replicate),data=ssc_data_no_nas_ssc)
+ 
+ #print(anova(mmod))
+anv = as.data.frame(anova(mmod))
+  #Protocol = rep(unique(test.set$PROTOCOL),dim(anv)[1])
+ # Set = rep(unique(test.set$SET),dim(anv)[1])
+  #Effect = row.names(anv)
+  #anova.table = data.frame(Protocol,Effect,anv[,2:dim(anv)[2]])
+  anv$CV = sjstats::cv(mmod)*100
+  #anv$marginal_rsquared = round(MuMIn::r.squaredGLMM(model)[1],2)
+  #anv$rsquared = round(MuMIn::r.squaredGLMM(mmod)[2],2)
+  anv= anv %>% mutate_if(is.numeric, round, 3)
+  anv = anv %>% mutate(pvalue= format.pval(`Pr(>F)`,digits=2, eps=0.001, nsmall=3))
+  
+  lsm1 = emmeans::lsmeans(mmod,~VARIETY)  
+  #lsm1 = emmeans::lsmeans(mmod,~Irrigation:interrow_width)  
+  lsm1.df = multcomp::cld(lsm1,alpha=0.1,Letters=LETTERS,sort=TRUE,adjust="tukey")
+  
+  lsm1.df = as.data.frame(lsm1.df)
+  
+  #lsm1 = emmeans::lsmeans(mmod,~Irrigation:interrow_width)  
+
+delta1 = emmeans::contrast(lsm1,method="pairwise")
+  delta1.df = as.data.frame(summary(delta1,adjust="Tukey"))
+  delta1.df= delta1.df %>% mutate_if(is.numeric, round, 2)
+  delta1.df = delta1.df %>% mutate(Significance=ifelse(p.value<0.05, "Significant", ifelse(p.value >= 0.05 & p.value<0.1,"Significant","Not significant")))
+  return(list(anv,lsm1.df,delta1.df))
+ 
+}
+
+
+#across location
+
+across_location = function(data_df_long){
+  traits = unique(data_df_long$trait)
+  analysis_type="Across locations"
+  means.df = NULL
+  anova.df=NULL
+  delta_table = NULL
+  for(i in 1:length(traits)){
+    #print(traits[i])
+    temp = filter(data_df_long, type == traits[i])
+    #temp = filter(data_df_long, trait == traits[i])
+    #temp_wide=temp %>% spread(trait, value)
+   model = lmer(value ~ irrigation_percent  * hybrid_interrow_width_cm + (1|Location/Replicate)+ (1|Location:irrigation_percent)+ +(1|Location:irrigation_percent:hybrid_interrow_width_cm) ,data=temp)
+    anova_table= create_anova_table_new(model,temp,traits[i],analysis_type)
+    anova_table$Field = NULL
+    anova_table$Trait= traits[i]
+     anova_table$number_of_trials= length(unique(data_df_long$Location))
+      #means.df = rbind(means.df,lsm.df)
+      #anova.df=rbind(anova.df,anova_table)
+      lsm.df = create_OneFactor_lsmeans_table_new(model, temp,traits[i],analysis_type)
+      lsm.df$Field = NULL
+    lsm.df$Trait= traits[i]
+     lsm.df$number_of_trials= length(unique(data_df_long$Location))
+      #lsm.df$Field = traits[i]
+      #anova_table= create_anova_table_new(model,temp,traits[i],analysis_type)
+      means.df = rbind(means.df,lsm.df)
+      anova.df=rbind(anova.df,anova_table)
+      delta.df = create_OneFactor_Contrast_Table_new(model,temp,traits[i],analysis_type)
+      delta.df$Field = NULL
+    delta.df$Trait= traits[i]
+    delta.df$number_of_trials= length(unique(data_df_long$Location))
+      delta_table = rbind(delta_table,delta.df)
+  }
+  
+return(list(means.df,anova.df,delta_table))
+}
+
+create_OneFactor_lsmeans_table_new = function(model,test.set,field,analysis_type){
+  lsm1 = emmeans::lsmeans(model,~irrigation_percent:hybrid_interrow_width_cm)  
+  lsm1.df = multcomp::cld(lsm1,alpha=0.1,Letters=LETTERS,sort=TRUE,adjust="tukey")
+  #Factor = rep("Treatment1",dim(lsm1.df)[1])
+  #Protocol = rep(unique(test.set$Protocol),dim(lsm1.df)[1])
+  #Set = rep(unique(test.set$SET),dim(lsm1.df)[1])
+  names(lsm1.df)[1] = "Level"
+  #print(names(lsm1.df))
+  lsm1.df = data.frame(lsm1.df$Level,lsm1.df$hybrid_interrow_width_cm,lsm1.df$lsmean,lsm1.df$SE,lsm1.df$df,lsm1.df$lower.CL,lsm1.df$upper.CL,lsm1.df$.group)
+  names(lsm1.df) = c("Factor","Group1","lsmean","SE","DF","Lower_CI","Upper_CI","Group")
+  lsm1.df$Field = field
+  lsm1.df$analysis_type=analysis_type
+  lsm1.df= lsm1.df %>% mutate_if(is.numeric, round, 2)
+  return(lsm1.df)
+}
+
+create_anova_table_new = function(model,test.set, field,analysis_type){
+  anv = as.data.frame(anova(model))
+  Protocol = rep(unique(test.set$PROTOCOL),dim(anv)[1])
+ # Set = rep(unique(test.set$SET),dim(anv)[1])
+  #Effect = row.names(anv)
+  #anova.table = data.frame(Protocol,Effect,anv[,2:dim(anv)[2]])
+  anv$CV = sjstats::cv(model)*100
+  #anv$marginal_rsquared = round(MuMIn::r.squaredGLMM(model)[1],2)
+  #anv$rsquared = round(MuMIn::r.squaredGLMM(model)[2],2)
+  anv= anv %>% mutate_if(is.numeric, round, 3)
+  anv = anv %>% mutate(pvalue= format.pval(`Pr(>F)`,digits=2, eps=0.001, nsmall=3))
+  anv$Field = field
+  anv$analysis_type = analysis_type
+  
+anv = anv %>% mutate(Significance=ifelse(`Pr(>F)`<0.05, "Significant","Not significant"))
+#https://davidgohel.github.io/flextable/articles/format.html
+#print(names(anv))
+anv = anv[c(9,10,2,3,5:8,11)]
+ # anova.table$Num.Fields = n.fields
+#  anova.table$Trait = trait.name
+  #colnames(anova.table) = c("Protocol","Effect","numDF","denDF","F-value","P-value","CV")
+  #anv$field=field
+  
+  return(anv)
+}
+
+
+create_OneFactor_Contrast_Table_new = function(model,test.set, field,analysis_type){
+  lsm1 = emmeans::lsmeans(model,~irrigation_percent:hybrid_interrow_width_cm)
+  delta1 = emmeans::contrast(lsm1,method="pairwise")
+  delta1.df = as.data.frame(summary(delta1,adjust="Tukey"))
+  Factor = rep("Treatment1",dim(delta1.df)[1])
+  #Protocol = rep(unique(test.set$PROTOCOL),dim(delta1.df)[1])
+  #Set = rep(unique(test.set$SET),dim(delta1.df)[1])
+  
+  ## separating contrast column to treatment 1 and treatment 2
+  
+  delta1.df = delta1.df %>% mutate(Significance=ifelse(p.value<0.05, "Significant", ifelse(p.value >= 0.05 & p.value<0.1,"Significant","Not significant")))
+  ## Parsing the Contrast column and generating the first and second columns
+  # contrast.rcbd = as.character(delta1.df$contrast)
+  # V1 = character(length = dim(delta1.df)[1])
+  # V2 = character(length = dim(delta1.df)[1])
+  # for(j in 1:dim(delta1.df)[1]){
+  #   contrast.part = strsplit(contrast.rcbd[j]," - ")
+  #   V1[j] = contrast.part[[1]][1]
+  #   V2[j] = contrast.part[[1]][2]
+  # }
+  # delta1.df = data.frame(Protocol,Set,Factor,V1,V2,delta1.df$estimate,delta1.df$p.value) 
+  # delta1.df$sig.1 = ifelse(delta1.df$delta1.df.p.value<0.1,TRUE,FALSE)
+  # names(delta1.df) = c("Protocol","Set","Factor","V1","V2","Diff","Pvalue","Sig_At_10percent")
+  #delta1.df$Observation = field
+  delta1.df$Field=field
+  delta1.df$analysis_type = analysis_type
+  return(delta1.df)
+}
+
+# ssc_data_model = ssc_data_all[,c(1:14,32,39,44:47,52)]
+# ssc_data_model = filter(ssc_data_model, country=="greece")
+# #ssc_data_model_1 = filter(ssc_data_model, )
+# ssc_data_long = ssc_data_model%>% gather(type, value, 14:20)
+# ssc_data_long = filter(ssc_data_long,type!="yield_t_per_ha")
+# ssc_data_long = filter(ssc_data_long, !is.na(value))
+# ssc_data_long$value = as.double(ssc_data_long$value )
+# traits = unique(ssc_data_long$type)
+# all_locations = unique(ssc_data_all$Location)
+# ssc_data_outlier = data.frame()
+#   for (i in 1:length(all_locations)){
+#   
+#   outlier_data = data_with_model_outlier_check_by_location(ssc_data_long,3.5)
+#   table(outlier_data$DSR_by_location_outlier_flag)
+#   ssc_data_outlier = rbind(ssc_data_outlier,outlier_data )
+#   }
+
+by_location_analysis = function(data_df_long){
+  #traits = unique(data_df_long$trait)
+  #data_df_long$rep = as.factor(data_df_long$rep)
+traits= unique(data_df_long$type)
+ 
+  analysis_type="Across location"
+  means.df = NULL
+  anova.df=NULL
+  delta_table = NULL
+  for(i in 1:length(traits)){
+    #print(traits[i])
+    temp = filter(data_df_long, trait == traits[i])
+    temp = filter(temp, value!="NA")
+    #print(dim(temp))
+    #temp = filter(data_df_long, trait == traits[i])
+    #temp_wide=temp %>% spread(trait, value)
+     # model = lmerTest::lmer(value ~ productName+ (1|unique_location_name), data = temp)
+ mmod = lmer(value ~ as.factor(VARIETY) + (1|replicate),data=temp)
+     
+anv = as.data.frame(anova(mmod))
+  #Protocol = rep(unique(test.set$PROTOCOL),dim(anv)[1])
+ # Set = rep(unique(test.set$SET),dim(anv)[1])
+  #Effect = row.names(anv)
+  #anova.table = data.frame(Protocol,Effect,anv[,2:dim(anv)[2]])
+  anv$CV = sjstats::cv(mmod)*100
+  #anv$marginal_rsquared = round(MuMIn::r.squaredGLMM(model)[1],2)
+  #anv$rsquared = round(MuMIn::r.squaredGLMM(mmod)[2],2)
+  anv= anv %>% mutate_if(is.numeric, round, 3)
+  anv = anv %>% mutate(pvalue= format.pval(`Pr(>F)`,digits=2, eps=0.001, nsmall=3))
+      
+    #anova_table$Field = NULL
+    anv$Trait= traits[i]
+     #nova_table$number_of_trials= length(unique(data_df_long$municipality))
+     #print(head(anova_table))
+      #means.df = rbind(means.df,lsm.df)
+      anova.df=rbind(anova.df,anv)
+      #View(anova.df)
+ lsm1 = emmeans::lsmeans(mmod,~VARIETY)  
+  #lsm1 = emmeans::lsmeans(mmod,~Irrigation:interrow_width)  
+  lsm1.df = multcomp::cld(lsm1,alpha=0.1,Letters=LETTERS,sort=TRUE,adjust="tukey")
+  
+  lsm1.df = as.data.frame(lsm1.df)      #lsm.df = create_TwoFactor_lsmeans_table(model, temp,traits[i],analysis_type)
+      #
+     # lsm.df$Field = NULL
+    lsm1.df$Trait= traits[i]
+    # lsm.df$number_of_trials= length(unique(data_df_long$municipality))
+      #lsm.df$Field = traits[i]
+      #anova_table= create_anova_table_new(model,temp,traits[i],analysis_type)
+      means.df = rbind(means.df,lsm1.df)
+      #anova.df=rbind(anova.df,anova_table)
+      delta1 = emmeans::contrast(lsm1,method="pairwise")
+  delta1.df = as.data.frame(summary(delta1,adjust="Tukey"))
+  delta1.df= delta1.df %>% mutate_if(is.numeric, round, 2)
+  delta1.df = delta1.df %>% mutate(Significance=ifelse(p.value<0.05, "Significant", ifelse(p.value >= 0.05 & p.value<0.1,"Significant","Not significant")))
+      #delta.df$Field = NULL
+    delta1.df$Trait= traits[i]
+    #delta.df$number_of_trials= length(unique(data_df_long$municipality))
+      delta_table = rbind(delta_table,delta1.df)
+  }
+  
+return(list(means.df,anova.df,delta_table))
+}
+
+
+ 
+ 
+  
+  #lsm1 = emmeans::lsmeans(mmod,~Irrigation:interrow_width)  
+
+
+```
+
+## 15th of august to 24th august
+
+```{r message=FALSE, warning=FALSE, echo=F}
+model_data = filter(hydric_potential_long_1_summary_hydric, DATE>="2024-08-15")
+model_data = filter(model_data, DATE<="2024-08-24")
+
+traits = unique(model_data$type)
+model_data$value = as.double(model_data$value )
+
+model_data = model_data %>% filter(LOCATION== "ALMUDEVAR")
+
+outlier_data = data_with_model_outlier_check_by_location(model_data,3)
+
+
+table(outlier_data$DSR_by_location_outlier_flag)
+
+ssc_data_outlier_no_outlier = filter(outlier_data,DSR_by_location_outlier_flag==FALSE )
+#table(ssc_data_outlier_no_outlier$DSR_by_location_outlier_flag)
+
+DT::datatable(ssc_data_outlier_no_outlier, filter="top")
+
+# model_data_summary = model_data %>% group_by(LOCATION,VARIETY,type,trait,replicate) %>% summarise(value= mean(value))
+# 
+# model_data_summary_loc1 = model_data_summary %>% filter(LOCATION== "ALMUDEVAR")
+# 
+# model_data_summary_loc1_trait1 = filter(model_data_summary_loc1, type=="Hydric potential (kPa) 30 cm")
+# 
+# model = lmerTest::lmer(value ~ VARIETY + (1|replicate), data = model_data_summary_loc1_trait1)
+# 
+# lsm1 = emmeans::lsmeans(model,~VARIETY)  
+# library(multcompView)
+#   lsm1.df = multcomp::cld(lsm1,alpha=0.1,Letters=LETTERS,sort=TRUE,adjust="none")
+```
+
+
+```{r message=FALSE, warning=FALSE, echo=F,fig.width=14}
+
+
+#only SSCs
+  ssc_data=ssc_data_outlier_no_outlier
+ 
+
+
+#ssc_data_no_nas_ssc = ssc_data_high_ye%>% filter(hybrid %in% c("EW6846"))
+   library(multcompView)
+ssc_data$VARIETY = as.factor(ssc_data$VARIETY)
+
+ssc_data$replicate  = as.factor(ssc_data$replicate  )
+
+
+
+#STANDART 100
+
+mod_results=by_location_analysis(ssc_data) 
+lsmeans_results = as.data.frame(mod_results[1])
+anova_results = as.data.frame(mod_results[2])
+contrast_results = as.data.frame(mod_results[3])
+
+#ssc_hybrids = c("EW6846XKL1" ,"EW6015XKL1","EW6436XKL1","EW6650XKP1","EW6526XKL1","EW6846","EW6436")
+ 
+#lsmeans_results = lsmeans_results %>% mutate(hybrid_type = ifelse(hybrid_name %in% ssc_hybrids, "ssc","tall"))
+
+library(stringr)
+lsmeans_results_ps= lsmeans_results %>%
+  mutate_if(is.character, str_trim)
+lsmeans_results_ps= lsmeans_results_ps %>%
+  mutate(across(where(is.character), str_remove_all, pattern = fixed(" ")))
+ 
+lsmeans_results_ps$Group = as.factor(lsmeans_results_ps$.group)
+lsmeans_results_ps= lsmeans_results_ps %>% mutate_if(is.numeric, round, 1)
+pd <- position_dodge(0.1)
+plot_lsmeans=ggplot(lsmeans_results_ps,aes(reorder( VARIETY,-lsmean),lsmean, fill=as.factor(VARIETY)))+geom_bar(stat="identity",position="dodge")+xlab("Product")+ylab(" LSMeans")+
+  #theme_classic() + 
+  theme( axis.text = element_text( size = 10 ),
+         axis.text.x = element_text( size = 10 ),
+         axis.title = element_text( size = 10, face = "bold" ),strip.text = element_text(size = 13, face = 'bold') ) +
+     geom_text(aes(label=lsmean,y = lsmean, group = VARIETY), position = position_dodge(width = 0.8), vjust = -0.9, 
+            size = 3)+ theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))+
+  geom_errorbar(aes(ymin=lsmean-SE, ymax=lsmean+SE), width=.2,
+                position=position_dodge(.9))+xlab("Factor")+ylab("lsmeans - Hydric Potential (KPa)")+geom_text(aes(label = Group, y = 5, group = VARIETY), vjust = -0.9, 
+            size = 3, position = position_dodge(width = 0.8))+xlab("Hybrid")+facet_wrap(~Trait,scales="free_x")+ggtitle("Comparison of Hydric Potential at Amludevar location: Induced Stress Phase 1 - 15th to 24th August")
+plot_lsmeans
+
+#DT::datatable(anova_results)
+  #DT::datatable(lsmeans_results)
+  
+#plot_lsmeans_ssc_only(lsmeans_results)
+
+contrast_results = contrast_results%>% separate(contrast, into=c("SSC system 1","SSC system 2"), sep=" - ",remove=F)
+
+#DT::datatable(lsmeans_results_ps, filter="top")
+
+#DT::datatable(contrast_results, filter="top")
+
+```
+
+
+## 2nd September to 20th of September
+
+
+```{r message=FALSE, warning=FALSE, echo=F}
+model_data = filter(hydric_potential_long_1_summary_hydric, DATE>="2024-09-02")
+model_data = filter(model_data, DATE<="2024-09-20")
+
+traits = unique(model_data$type)
+model_data$value = as.double(model_data$value )
+
+model_data = model_data %>% filter(LOCATION== "ALMUDEVAR")
+
+outlier_data = data_with_model_outlier_check_by_location(model_data,3)
+
+
+table(outlier_data$DSR_by_location_outlier_flag)
+
+ssc_data_outlier_no_outlier = filter(outlier_data,DSR_by_location_outlier_flag==FALSE )
+#table(ssc_data_outlier_no_outlier$DSR_by_location_outlier_flag)
+
+DT::datatable(ssc_data_outlier_no_outlier, filter="top")
+
+# model_data_summary = model_data %>% group_by(LOCATION,VARIETY,type,trait,replicate) %>% summarise(value= mean(value))
+# 
+# model_data_summary_loc1 = model_data_summary %>% filter(LOCATION== "ALMUDEVAR")
+# 
+# model_data_summary_loc1_trait1 = filter(model_data_summary_loc1, type=="Hydric potential (kPa) 30 cm")
+# 
+# model = lmerTest::lmer(value ~ VARIETY + (1|replicate), data = model_data_summary_loc1_trait1)
+# 
+# lsm1 = emmeans::lsmeans(model,~VARIETY)  
+# library(multcompView)
+#   lsm1.df = multcomp::cld(lsm1,alpha=0.1,Letters=LETTERS,sort=TRUE,adjust="none")
+```
+
+
+```{r message=FALSE, warning=FALSE, echo=F,fig.width=14}
+
+
+#only SSCs
+  #only SSCs
+  ssc_data=ssc_data_outlier_no_outlier
+ 
+
+
+#ssc_data_no_nas_ssc = ssc_data_high_ye%>% filter(hybrid %in% c("EW6846"))
+   library(multcompView)
+ssc_data$VARIETY = as.factor(ssc_data$VARIETY)
+
+ssc_data$replicate  = as.factor(ssc_data$replicate  )
+
+
+
+#STANDART 100
+
+mod_results=by_location_analysis(ssc_data) 
+lsmeans_results = as.data.frame(mod_results[1])
+anova_results = as.data.frame(mod_results[2])
+contrast_results = as.data.frame(mod_results[3])
+
+#ssc_hybrids = c("EW6846XKL1" ,"EW6015XKL1","EW6436XKL1","EW6650XKP1","EW6526XKL1","EW6846","EW6436")
+ 
+#lsmeans_results = lsmeans_results %>% mutate(hybrid_type = ifelse(hybrid_name %in% ssc_hybrids, "ssc","tall"))
+
+library(stringr)
+lsmeans_results_ps= lsmeans_results %>%
+  mutate_if(is.character, str_trim)
+lsmeans_results_ps= lsmeans_results_ps %>%
+  mutate(across(where(is.character), str_remove_all, pattern = fixed(" ")))
+ 
+lsmeans_results_ps$Group = as.factor(lsmeans_results_ps$.group)
+lsmeans_results_ps= lsmeans_results_ps %>% mutate_if(is.numeric, round, 1)
+pd <- position_dodge(0.1)
+plot_lsmeans=ggplot(lsmeans_results_ps,aes(reorder( VARIETY,-lsmean),lsmean, fill=as.factor(VARIETY)))+geom_bar(stat="identity",position="dodge")+xlab("Product")+ylab(" LSMeans")+
+  #theme_classic() + 
+  theme( axis.text = element_text( size = 10 ),
+         axis.text.x = element_text( size = 10 ),
+         axis.title = element_text( size = 10, face = "bold" ),strip.text = element_text(size = 13, face = 'bold') ) +
+     geom_text(aes(label=lsmean,y = lsmean, group = VARIETY), position = position_dodge(width = 0.8), vjust = -0.9, 
+            size = 3)+ theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))+
+  geom_errorbar(aes(ymin=lsmean-SE, ymax=lsmean+SE), width=.2,
+                position=position_dodge(.9))+xlab("Factor")+ylab("lsmeans - Hydric Potential (KPa)")+geom_text(aes(label = Group, y = 5, group = VARIETY), vjust = -0.9, 
+            size = 3, position = position_dodge(width = 0.8))+xlab("Hybrid")+facet_wrap(~Trait,scales="free_x")+ggtitle("Comparison of Hydric Potential at Amludevar location: Induced Stress Phase 2 - 2nd to 20th September")
+plot_lsmeans
+
+#DT::datatable(anova_results)
+  #DT::datatable(lsmeans_results)
+  
+#plot_lsmeans_ssc_only(lsmeans_results)
+
+contrast_results = contrast_results%>% separate(contrast, into=c("SSC system 1","SSC system 2"), sep=" - ",remove=F)
+
+```
+
+## 15th August till 20 of September
+
+
+```{r message=FALSE, warning=FALSE, echo=F}
+model_data = filter(hydric_potential_long_1_summary_hydric, DATE>="2024-08-15")
+model_data = filter(model_data, DATE<="2024-09-20")
+
+traits = unique(model_data$type)
+model_data$value = as.double(model_data$value )
+
+model_data = model_data %>% filter(LOCATION== "ALMUDEVAR")
+
+outlier_data = data_with_model_outlier_check_by_location(model_data,3)
+
+
+table(outlier_data$DSR_by_location_outlier_flag)
+
+ssc_data_outlier_no_outlier = filter(outlier_data,DSR_by_location_outlier_flag==FALSE )
+#table(ssc_data_outlier_no_outlier$DSR_by_location_outlier_flag)
+
+DT::datatable(ssc_data_outlier_no_outlier, filter="top")
+
+# model_data_summary = model_data %>% group_by(LOCATION,VARIETY,type,trait,replicate) %>% summarise(value= mean(value))
+# 
+# model_data_summary_loc1 = model_data_summary %>% filter(LOCATION== "ALMUDEVAR")
+# 
+# model_data_summary_loc1_trait1 = filter(model_data_summary_loc1, type=="Hydric potential (kPa) 30 cm")
+# 
+# model = lmerTest::lmer(value ~ VARIETY + (1|replicate), data = model_data_summary_loc1_trait1)
+# 
+# lsm1 = emmeans::lsmeans(model,~VARIETY)  
+# library(multcompView)
+#   lsm1.df = multcomp::cld(lsm1,alpha=0.1,Letters=LETTERS,sort=TRUE,adjust="none")
+```
+
+
+```{r message=FALSE, warning=FALSE, echo=F,fig.width=14}
+
+
+#only SSCs
+  ssc_data=ssc_data_outlier_no_outlier
+ 
+
+
+#ssc_data_no_nas_ssc = ssc_data_high_ye%>% filter(hybrid %in% c("EW6846"))
+   library(multcompView)
+ssc_data$VARIETY = as.factor(ssc_data$VARIETY)
+
+ssc_data$replicate  = as.factor(ssc_data$replicate  )
+
+
+
+#STANDART 100
+
+mod_results=by_location_analysis(ssc_data) 
+lsmeans_results = as.data.frame(mod_results[1])
+anova_results = as.data.frame(mod_results[2])
+contrast_results = as.data.frame(mod_results[3])
+
+#ssc_hybrids = c("EW6846XKL1" ,"EW6015XKL1","EW6436XKL1","EW6650XKP1","EW6526XKL1","EW6846","EW6436")
+ 
+#lsmeans_results = lsmeans_results %>% mutate(hybrid_type = ifelse(hybrid_name %in% ssc_hybrids, "ssc","tall"))
+
+library(stringr)
+lsmeans_results_ps= lsmeans_results %>%
+  mutate_if(is.character, str_trim)
+lsmeans_results_ps= lsmeans_results_ps %>%
+  mutate(across(where(is.character), str_remove_all, pattern = fixed(" ")))
+ 
+lsmeans_results_ps$Group = as.factor(lsmeans_results_ps$.group)
+lsmeans_results_ps= lsmeans_results_ps %>% mutate_if(is.numeric, round, 1)
+pd <- position_dodge(0.1)
+plot_lsmeans=ggplot(lsmeans_results_ps,aes(reorder( VARIETY,-lsmean),lsmean, fill=as.factor(VARIETY)))+geom_bar(stat="identity",position="dodge")+xlab("Product")+ylab(" LSMeans")+
+  #theme_classic() + 
+  theme( axis.text = element_text( size = 10 ),
+         axis.text.x = element_text( size = 10 ),
+         axis.title = element_text( size = 10, face = "bold" ),strip.text = element_text(size = 13, face = 'bold') ) +
+     geom_text(aes(label=lsmean,y = lsmean, group = VARIETY), position = position_dodge(width = 0.8), vjust = -0.9, 
+            size = 3)+ theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))+
+  geom_errorbar(aes(ymin=lsmean-SE, ymax=lsmean+SE), width=.2,
+                position=position_dodge(.9))+xlab("Factor")+ylab("lsmeans - Hydric Potential (KPa)")+geom_text(aes(label = Group, y = 5, group = VARIETY), vjust = -0.9, 
+            size = 3, position = position_dodge(width = 0.8))+xlab("Hybrid")+facet_wrap(~Trait,scales="free_x")+ggtitle("Comparison of Hydric Potential at Amludevar location: Induced Stress Phase - 15th of August to 20th September")
+plot_lsmeans
+
+#DT::datatable(anova_results)
+  #DT::datatable(lsmeans_results)
+  
+#plot_lsmeans_ssc_only(lsmeans_results)
+
+contrast_results = contrast_results%>% separate(contrast, into=c("SSC system 1","SSC system 2"), sep=" - ",remove=F)
+
+```
+
+
+# Lysimeter data analysis
+
+Aim:-	To compare statistically the N,P & K levels between SSC (young, old leaf) VS Tall (young, old leaf)?
+
+
+
+
+- The more important is P and K but aslo important the others as CA, Mg, NA. N is not important as the soil was saturated of N.
+
+```{r message=FALSE, warning=FALSE, echo=F,fig.width=10, fig.height=5}
+library(readxl)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(lmerTest)
+library(stringr)
+
+lysimeter = read_excel("/mnt/data/ebro_lysimeter_data.xlsx",sheet=1)
+
+lysimeter_1 = read_excel("/mnt/data/Row data Lysimeter tensiometer wheather for Naha_2.xlsx",sheet=1)
+
+lysimeter_1 =lysimeter_1 %>% mutate(variety_rep= paste(VARIETY, "_rep",TRIAL, sep=""))
+
+lysimeter_1_summary = lysimeter_1 %>% group_by(LOCATION,VARIETY,DATE,`Type of analysis`) %>% summarise(mean_Phosphorous_ppm= mean(`P - Phosphorous\r\nppm`,na.rm=T),mean_Potassium_ppm= mean(`K - Potassium\r\nppm`,na.rm=T),mean_Calcium_ppm= mean(`Ca - Calcium\r\r\nppm`,na.rm=T),mean_Magnesium_ppm= mean(`Mg - Magnesium\r\r\nppm`,na.rm=T),mean_Sodium_ppm= mean(`Na - Sodium\r\nppm`,na.rm=T),mean_Sulfur_ppm= mean(`S - Sulfur\r\nppm`,na.rm=T),mean_Zinc_ppm= mean(`Zn - Zinc\r\nppm`,na.rm=T),mean_Sulfur_ppm= mean(`S - Sulfur\r\nppm`,na.rm=T),mean_Ammonium_ppm= mean(`NH4 - Ammonium\r\r\nppm`,na.rm=T),mean_Nitrate_ppm= mean(`NO3 - Nitrate\r\nppm`,na.rm=T),mean_Total_Nitrogen_ppm= mean(`N - Total Nitrogen\r\nppm`,na.rm=T),mean_sugar_percent= mean(`Sugar\r\n%`,na.rm=T),mean_pH= mean(`pH\r\r\n`,na.rm=T))
+
+lysimeter_sap = lysimeter %>% filter(`Type of analysis`== "Plant sap")
+
+lysimeter_sap =lysimeter_sap %>% unite(variety_leaf_type, VARIETY, `Type of leaf`, sep="_",remove=F)
+
+lysimeter_sap_summary = lysimeter_sap %>% group_by(LOCATION,VARIETY,`Type of leaf`,variety_leaf_type) %>% summarise(mean_Phosphorous_ppm= mean(`P - Phosphorous\r\nppm`,na.rm=T),mean_Potassium_ppm= mean(`K - Potassium\r\nppm`,na.rm=T),mean_Calcium_ppm= mean(`Ca - Calcium\r\r\nppm`,na.rm=T),mean_Magnesium_ppm= mean(`Mg - Magnesium\r\r\nppm`,na.rm=T),mean_Sodium_ppm= mean(`Na - Sodium\r\nppm`,na.rm=T),mean_Sulfur_ppm= mean(`S - Sulfur\r\nppm`,na.rm=T),mean_Zinc_ppm= mean(`Zn - Zinc\r\nppm`,na.rm=T),mean_Sulfur_ppm= mean(`S - Sulfur\r\nppm`,na.rm=T),mean_Ammonium_ppm= mean(`NH4 - Ammonium\r\r\nppm`,na.rm=T),mean_Nitrate_ppm= mean(`NO3 - Nitrate\r\nppm`,na.rm=T),mean_Total_Nitrogen_ppm= mean(`N - Total Nitrogen\r\nppm`,na.rm=T),mean_sugar_percent= mean(`Sugar\r\n%`,na.rm=T),mean_pH= mean(`pH\r\r\n`,na.rm=T))
+
+
+```
+
+
+
+## Nutrients in soil at different depths
+
+### Potassium
+
+```{r message=FALSE, warning=FALSE, echo=F,fig.width=10, fig.height=5}
+p <- ggplot(lysimeter_1, aes(x=as.Date(DATE), y=`K - Potassium\r\nppm`, color=variety_rep,alpha=0.5)) +
+  geom_point()  + geom_smooth(se=FALSE)+
+  xlab("")+ggtitle("Nutrients in soil at different depth: Potassium ppm")+facet_grid(`Type of analysis`~LOCATION,scales="free_y")+ylab(("Potassium ppm"))
+
+plotly::ggplotly(p)
+
+
+
+p <- ggplot(lysimeter_1_summary, aes(x=as.Date(DATE), y=mean_Potassium_ppm, color=VARIETY,alpha=0.5)) +
+  geom_point()  + geom_smooth()+
+  xlab("")+ggtitle("Nutrients in soil at different depth: Mean Potassium ppm")+facet_grid(`Type of analysis`~LOCATION,scales="free_y")+ylab(("Mean Potassium ppm"))
+
+plotly::ggplotly(p)
+```
+
+### Calcium
+
+```{r message=FALSE, warning=FALSE, echo=F,fig.width=10, fig.height=5}
+p <- ggplot(lysimeter_1, aes(x=as.Date(DATE), y=`Ca - Calcium\r\r\nppm`, color=variety_rep,alpha=0.5)) +
+  geom_point()  + geom_smooth(se=FALSE)+
+  xlab("")+ggtitle("Nutrients in soil at different depth: Calcium ppm")+facet_grid(`Type of analysis`~LOCATION,scales="free_y")+ylab(("Calcium ppm"))
+
+plotly::ggplotly(p)
+
+
+p <- ggplot(lysimeter_1_summary, aes(x=as.Date(DATE), y=mean_Calcium_ppm, color=VARIETY,alpha=0.5)) +
+  geom_point()  + geom_smooth()+
+  xlab("")+ggtitle("Nutrients in soil at different depth: mean_Calcium_ppm")+facet_grid(`Type of analysis`~LOCATION,scales="free_y")+ylab(("mean_Calcium_ppm"))
+
+plotly::ggplotly(p)
+
+```
+
+
+### Sodium 
+
+```{r message=FALSE, warning=FALSE, echo=F,fig.width=10, fig.height=5}
+p <- ggplot(lysimeter_1, aes(x=as.Date(DATE), y=`Na - Sodium\r\nppm`, color=variety_rep,alpha=0.5)) +
+  geom_point()  + geom_smooth(se=FALSE)+
+  xlab("")+ggtitle("Nutrients in soil at different depth: Sodium ppm")+facet_grid(`Type of analysis`~LOCATION,scales="free_y")+ylab(("Sodium ppm"))
+
+plotly::ggplotly(p)
+
+
+p <- ggplot(lysimeter_1_summary, aes(x=as.Date(DATE), y=mean_Sodium_ppm, color=VARIETY,alpha=0.5)) +
+  geom_point()  + geom_smooth()+
+  xlab("")+ggtitle("Nutrients in soil at different depth: mean_Sodium_ppm")+facet_grid(`Type of analysis`~LOCATION,scales="free_y")+ylab(("mean_Sodium_ppm"))
+
+plotly::ggplotly(p)
+
+```
+
+## Nutrient content in the leaf
+
+### Potassium
+
+```{r message=FALSE, warning=FALSE, echo=F,fig.width=10, fig.height=5}
+p <- ggplot(lysimeter_sap, aes(x=as.Date(DATE), y=`K - Potassium\r\nppm`, color=variety_leaf_type,linetype=`Type of leaf`,alpha=0.5)) +
+  geom_point() + geom_smooth(se=FALSE) +
+  xlab("")+ggtitle("Nutrient content in leaf: Potassium ppm")+facet_grid(~LOCATION)+ylab(("Potassium ppm"))
+plotly::ggplotly(p)
+
+
+p <- ggplot(lysimeter_sap, aes(x=as.Date(DATE), y=`K - Potassium\r\nppm`, color=variety_leaf_type,alpha=0.5)) +
+  geom_point() + geom_smooth(se=FALSE) +
+  xlab("")+ggtitle("Nutrient content in leaf: Potassium ppm")+facet_wrap(LOCATION~`Type of leaf`, scales="free_x")+ylab(("Potassium ppm"))
+#plotly::ggplotly(p)
+
+ggplot(lysimeter_sap_summary,aes(variety_leaf_type,mean_Potassium_ppm, fill=VARIETY ))+geom_bar(stat="identity", position="dodge")+facet_grid(~LOCATION, scales="free_x")+
+     geom_text(aes(label=round(mean_Potassium_ppm,1)), vjust=0.05,hjust=0.5, size=3)+ggtitle("Nutrient content in leaf: Mean Potassium ppm")+theme( axis.text = element_text( size = 10 ),
+         axis.text.x = element_text(angle=90, size = 10 ),
+         axis.title = element_text( size = 10, face = "bold" ),strip.text = element_text(size = 13, face = 'bold') )
+
+```
+
+
+```{r message=FALSE, warning=FALSE, echo=F,fig.width=10, fig.height=10}
+
+
+ggplot(lysimeter_sap_summary,aes(variety_leaf_type,mean_Potassium_ppm, fill=VARIETY ))+geom_bar(stat="identity", position="dodge")+facet_wrap(LOCATION~`Type of leaf`, scales="free_x")+
+     geom_text(aes(label=round(mean_Potassium_ppm,1)), vjust=0.05,hjust=0.5, size=3)+ggtitle("Nutrient content in leaf: Mean Potassium ppm")+theme( axis.text = element_text( size = 10 ),
+         axis.text.x = element_text(angle=90, size = 10 ),
+         axis.title = element_text( size = 10, face = "bold" ),strip.text = element_text(size = 13, face = 'bold') )
+```
+
+### Phosphorus
+
+```{r message=FALSE, warning=FALSE, echo=F,fig.width=10, fig.height=5}
+p <- ggplot(lysimeter_sap, aes(x=as.Date(DATE), y=`P - Phosphorous\r\nppm`, color=variety_leaf_type,linetype=`Type of leaf`,alpha=0.5)) +
+  geom_point() + geom_smooth(se=FALSE) +
+  xlab("")+ggtitle("Nutrient content in leaf: Phosphorous ppm")+facet_grid(~LOCATION)+ylab(("Phosphorous ppm"))
+
+plotly::ggplotly(p)
+
+ggplot(lysimeter_sap_summary,aes(variety_leaf_type,mean_Phosphorous_ppm, fill=VARIETY ))+geom_bar(stat="identity", position="dodge")+facet_grid(~LOCATION, scales="free_x")+
+     geom_text(aes(label=round(mean_Phosphorous_ppm,1)), vjust=0.05,hjust=0.5, size=3)+ggtitle("Nutrient content in leaf: Mean Phosphorous ppm")+theme( axis.text = element_text( size = 10 ),
+         axis.text.x = element_text(angle=90, size = 10 ),
+         axis.title = element_text( size = 10, face = "bold" ),strip.text = element_text(size = 13, face = 'bold') )
+```
+
+```{r message=FALSE, warning=FALSE, echo=F,fig.width=10, fig.height=10}
+
+
+ggplot(lysimeter_sap_summary,aes(variety_leaf_type,mean_Phosphorous_ppm, fill=VARIETY ))+geom_bar(stat="identity", position="dodge")+facet_wrap(LOCATION~`Type of leaf`, scales="free_x")+
+     geom_text(aes(label=round(mean_Phosphorous_ppm,1)), vjust=0.05,hjust=0.5, size=3)+ggtitle("Nutrient content in leaf: Mean Phosphorous ppm")+theme( axis.text = element_text( size = 10 ),
+         axis.text.x = element_text(angle=90, size = 10 ),
+         axis.title = element_text( size = 10, face = "bold" ),strip.text = element_text(size = 13, face = 'bold') )
+
+```
+
+### Calcium
+
+```{r message=FALSE, warning=FALSE, echo=F,fig.width=10, fig.height=5}
+p <- ggplot(lysimeter_sap, aes(x=as.Date(DATE), y=`Ca - Calcium\r\r\nppm`, color=variety_leaf_type,linetype=`Type of leaf`,alpha=0.5)) +
+  geom_point() + geom_smooth(se=FALSE) +
+  xlab("")+ggtitle("Nutrient content in leaf: Calcium ppm")+facet_grid(~LOCATION)+ylab(("Calcium ppm"))
+plotly::ggplotly(p)
+
+ggplot(lysimeter_sap_summary,aes(variety_leaf_type,mean_Calcium_ppm, fill=VARIETY ))+geom_bar(stat="identity", position="dodge")+facet_grid(~LOCATION, scales="free_x")+
+     geom_text(aes(label=round(mean_Calcium_ppm,1)), vjust=0.05,hjust=0.5, size=3)+ggtitle("Nutrient content in leaf: Mean Calcium ppm")+theme( axis.text = element_text( size = 10 ),
+         axis.text.x = element_text(angle=90, size = 10 ),
+         axis.title = element_text( size = 10, face = "bold" ),strip.text = element_text(size = 13, face = 'bold') )
+```
+
+
+```{r message=FALSE, warning=FALSE, echo=F,fig.width=10, fig.height=10}
+
+
+ggplot(lysimeter_sap_summary,aes(variety_leaf_type,mean_Calcium_ppm, fill=VARIETY ))+geom_bar(stat="identity", position="dodge")+facet_wrap(LOCATION~`Type of leaf`, scales="free_x")+
+     geom_text(aes(label=round(mean_Calcium_ppm,1)), vjust=0.05,hjust=0.5, size=3)+ggtitle("Nutrient content in leaf: Mean Calcium ppm")+theme( axis.text = element_text( size = 10 ),
+         axis.text.x = element_text(angle=90, size = 10 ),
+         axis.title = element_text( size = 10, face = "bold" ),strip.text = element_text(size = 13, face = 'bold') )
+
+```
+
+### Magnesium
+
+```{r message=FALSE, warning=FALSE, echo=F,fig.width=10,fig.height=5}
+p <- ggplot(lysimeter_sap, aes(x=as.Date(DATE), y=`Mg - Magnesium\r\r\nppm`, color=variety_leaf_type,linetype=`Type of leaf`,alpha=0.5)) +
+  geom_point() + geom_smooth(se=FALSE) +
+  xlab("")+ggtitle("Nutrient content in leaf: Magnesium ppm")+facet_grid(~LOCATION)+ylab(("Magnesium ppm"))
+plotly::ggplotly(p)
+
+
+ggplot(lysimeter_sap_summary,aes(variety_leaf_type,mean_Magnesium_ppm, fill=VARIETY ))+geom_bar(stat="identity", position="dodge")+facet_grid(~LOCATION, scales="free_x")+
+     geom_text(aes(label=round(mean_Magnesium_ppm,1)), vjust=0.05,hjust=0.5, size=3)+ggtitle("Nutrient content in leaf: Mean Magnesium ppm")+theme( axis.text = element_text( size = 10 ),
+         axis.text.x = element_text(angle=90, size = 10 ),
+         axis.title = element_text( size = 10, face = "bold" ),strip.text = element_text(size = 13, face = 'bold') )
+
+```
+
+
+```{r message=FALSE, warning=FALSE, echo=F,fig.width=10,fig.height=10}
+
+
+ggplot(lysimeter_sap_summary,aes(variety_leaf_type,mean_Magnesium_ppm, fill=VARIETY ))+geom_bar(stat="identity", position="dodge")+facet_wrap(LOCATION~`Type of leaf`, scales="free_x")+
+     geom_text(aes(label=round(mean_Magnesium_ppm,1)), vjust=0.05,hjust=0.5, size=3)+ggtitle("Nutrient content in leaf: Mean Magnesium ppm")+theme( axis.text = element_text( size = 10 ),
+         axis.text.x = element_text(angle=90, size = 10 ),
+         axis.title = element_text( size = 10, face = "bold" ),strip.text = element_text(size = 13, face = 'bold') )
+```
+
+### Sodium
+
+```{r message=FALSE, warning=FALSE, echo=F,fig.width=10,fig.height=5}
+p <- ggplot(lysimeter_sap, aes(x=as.Date(DATE), y=`Na - Sodium\r\nppm` , color=variety_leaf_type,linetype=`Type of leaf`,alpha=0.5)) +
+  geom_point() + geom_smooth(se=FALSE) +
+  xlab("")+ggtitle("Nutrient content in leaf: Sodium ppm")+facet_grid(~LOCATION)+ylab(("Sodium ppm"))
+plotly::ggplotly(p)
+
+ggplot(lysimeter_sap_summary,aes(variety_leaf_type,mean_Sodium_ppm, fill=VARIETY ))+geom_bar(stat="identity", position="dodge")+facet_grid(~LOCATION, scales="free_x")+
+     geom_text(aes(label=round(mean_Sodium_ppm,1)), vjust=0.05,hjust=0.5, size=3)+ggtitle("Nutrient content in leaf: Mean Sodium ppm")+theme( axis.text = element_text( size = 10 ),
+         axis.text.x = element_text(angle=90, size = 10 ),
+         axis.title = element_text( size = 10, face = "bold" ),strip.text = element_text(size = 13, face = 'bold') )
+```
+
+
+```{r message=FALSE, warning=FALSE, echo=F,fig.width=10,fig.height=10}
+
+
+
+ggplot(lysimeter_sap_summary,aes(variety_leaf_type,mean_Sodium_ppm, fill=VARIETY ))+geom_bar(stat="identity", position="dodge")+facet_wrap(LOCATION~`Type of leaf`, scales="free_x")+
+     geom_text(aes(label=round(mean_Sodium_ppm,1)), vjust=0.05,hjust=0.5, size=3)+ggtitle("Nutrient content in leaf: Mean Sodium ppm")+theme( axis.text = element_text( size = 10 ),
+         axis.text.x = element_text(angle=90, size = 10 ),
+         axis.title = element_text( size = 10, face = "bold" ),strip.text = element_text(size = 13, face = 'bold') )
+```
+
+### Sulphur
+
+```{r message=FALSE, warning=FALSE, echo=F,fig.width=10, fig.height=5}
+p <- ggplot(lysimeter_sap, aes(x=as.Date(DATE), y=`S - Sulfur\r\nppm`  , color=variety_leaf_type,linetype=`Type of leaf`,alpha=0.5)) +
+  geom_point() + geom_smooth(se=FALSE) +
+  xlab("")+ggtitle("Nutrient content in leaf: Sulfur ppm")+facet_grid(~LOCATION)+ylab(("Sulfur ppm"))
+plotly::ggplotly(p)
+
+ggplot(lysimeter_sap_summary,aes(variety_leaf_type,mean_Sulfur_ppm, fill=VARIETY ))+geom_bar(stat="identity", position="dodge")+facet_grid(~LOCATION, scales="free_x")+
+     geom_text(aes(label=round(mean_Sulfur_ppm,1)), vjust=0.05,hjust=0.5, size=3)+ggtitle("Nutrient content in leaf: Mean Sulfur ppm")+theme( axis.text = element_text( size = 10 ),
+         axis.text.x = element_text(angle=90, size = 10 ),
+         axis.title = element_text( size = 10, face = "bold" ),strip.text = element_text(size = 13, face = 'bold') )
+```
+
+
+```{r message=FALSE, warning=FALSE, echo=F,fig.width=10, fig.height=10}
+
+
+ggplot(lysimeter_sap_summary,aes(variety_leaf_type,mean_Sulfur_ppm, fill=VARIETY ))+geom_bar(stat="identity", position="dodge")+facet_wrap(LOCATION~`Type of leaf`, scales="free_x")+
+     geom_text(aes(label=round(mean_Sulfur_ppm,1)), vjust=0.05,hjust=0.5, size=3)+ggtitle("Nutrient content in leaf: Mean Sulfur ppm")+theme( axis.text = element_text( size = 10 ),
+         axis.text.x = element_text(angle=90, size = 10 ),
+         axis.title = element_text( size = 10, face = "bold" ),strip.text = element_text(size = 13, face = 'bold') )
+
+```
+
+
+### Zinc
+
+```{r message=FALSE, warning=FALSE, echo=F,fig.width=10, fig.height=5}
+p <- ggplot(lysimeter_sap, aes(x=as.Date(DATE), y=`Zn - Zinc\r\nppm`  , color=variety_leaf_type,linetype=`Type of leaf`,alpha=0.5)) +
+  geom_point() + geom_smooth(se=FALSE) +
+  xlab("")+ggtitle("Nutrient content in leaf: Zinc ppm")+facet_grid(~LOCATION)+ylab(("Zinc ppm"))
+plotly::ggplotly(p)
+
+ggplot(lysimeter_sap_summary,aes(variety_leaf_type,mean_Zinc_ppm, fill=VARIETY ))+geom_bar(stat="identity", position="dodge")+facet_grid(~LOCATION, scales="free_x")+
+     geom_text(aes(label=round(mean_Zinc_ppm,1)), vjust=0.05,hjust=0.5, size=3)+ggtitle("Nutrient content in leaf: Mean Zinc ppm")+theme( axis.text = element_text( size = 10 ),
+         axis.text.x = element_text(angle=90, size = 10 ),
+         axis.title = element_text( size = 10, face = "bold" ),strip.text = element_text(size = 13, face = 'bold') )
+```
+
+
+```{r message=FALSE, warning=FALSE, echo=F,fig.width=10, fig.height=10}
+
+
+ggplot(lysimeter_sap_summary,aes(variety_leaf_type,mean_Zinc_ppm, fill=VARIETY ))+geom_bar(stat="identity", position="dodge")+facet_wrap(LOCATION~`Type of leaf`, scales="free_x")+
+     geom_text(aes(label=round(mean_Zinc_ppm,1)), vjust=0.05,hjust=0.5, size=3)+ggtitle("Nutrient content in leaf: Mean Zinc ppm")+theme( axis.text = element_text( size = 10 ),
+         axis.text.x = element_text(angle=90, size = 10 ),
+         axis.title = element_text( size = 10, face = "bold" ),strip.text = element_text(size = 13, face = 'bold') )
+```
+
+
+
+### Ammonium
+
+```{r message=FALSE, warning=FALSE, echo=F,fig.width=10, fig.height=5}
+p <- ggplot(lysimeter_sap, aes(x=as.Date(DATE), y=`NH4 - Ammonium\r\r\nppm`  , color=variety_leaf_type,linetype=`Type of leaf`,alpha=0.5)) +
+  geom_point() + geom_smooth(se=FALSE) +
+  xlab("")+ggtitle("Nutrient content in leaf: Ammonium ppm")+facet_grid(~LOCATION)+ylab(("Ammonium ppm"))
+plotly::ggplotly(p)
+
+
+ggplot(lysimeter_sap_summary,aes(variety_leaf_type,mean_Ammonium_ppm, fill=VARIETY ))+geom_bar(stat="identity", position="dodge")+facet_grid(~LOCATION, scales="free_x")+
+     geom_text(aes(label=round(mean_Ammonium_ppm,1)), vjust=0.05,hjust=0.5, size=3)+ggtitle("Nutrient content in leaf: Mean Ammonium ppm")+theme( axis.text = element_text( size = 10 ),
+         axis.text.x = element_text(angle=90, size = 10 ),
+         axis.title = element_text( size = 10, face = "bold" ),strip.text = element_text(size = 13, face = 'bold') )
+```
+
+
+```{r message=FALSE, warning=FALSE, echo=F,fig.width=10, fig.height=10}
+
+
+
+ggplot(lysimeter_sap_summary,aes(variety_leaf_type,mean_Ammonium_ppm, fill=VARIETY ))+geom_bar(stat="identity", position="dodge")+facet_wrap(LOCATION~`Type of leaf`, scales="free_x")+
+     geom_text(aes(label=round(mean_Ammonium_ppm,1)), vjust=0.05,hjust=0.5, size=3)+ggtitle("Nutrient content in leaf: Mean Ammonium ppm")+theme( axis.text = element_text( size = 10 ),
+         axis.text.x = element_text(angle=90, size = 10 ),
+         axis.title = element_text( size = 10, face = "bold" ),strip.text = element_text(size = 13, face = 'bold') )
+```
+
+### Nitrate
+
+```{r message=FALSE, warning=FALSE, echo=F,fig.width=10, fig.height=5}
+p <- ggplot(lysimeter_sap, aes(x=as.Date(DATE), y=`NO3 - Nitrate\r\nppm` , color=variety_leaf_type,linetype=`Type of leaf`,alpha=0.5)) +
+  geom_point() + geom_smooth(se=FALSE) +
+  xlab("")+ggtitle("Nutrient content in leaf: NO3 - Nitrate ppm")+facet_grid(~LOCATION)+ylab(("NO3 - Nitrate ppm"))
+plotly::ggplotly(p)
+
+ggplot(lysimeter_sap_summary,aes(variety_leaf_type,mean_Nitrate_ppm, fill=VARIETY ))+geom_bar(stat="identity", position="dodge")+facet_grid(~LOCATION, scales="free_x")+
+     geom_text(aes(label=round(mean_Nitrate_ppm,1)), vjust=0.05,hjust=0.5, size=3)+ggtitle("Nutrient content in leaf: Mean Nitrate ppm")+theme( axis.text = element_text( size = 10 ),
+         axis.text.x = element_text(angle=90, size = 10 ),
+         axis.title = element_text( size = 10, face = "bold" ),strip.text = element_text(size = 13, face = 'bold') )
+```
+
+
+```{r message=FALSE, warning=FALSE, echo=F,fig.width=10, fig.height=10}
+
+
+ggplot(lysimeter_sap_summary,aes(variety_leaf_type,mean_Nitrate_ppm, fill=VARIETY ))+geom_bar(stat="identity", position="dodge")+facet_wrap(LOCATION~`Type of leaf`, scales="free_x")+
+     geom_text(aes(label=round(mean_Nitrate_ppm,1)), vjust=0.05,hjust=0.5, size=3)+ggtitle("Nutrient content in leaf: Mean Nitrate ppm")+theme( axis.text = element_text( size = 10 ),
+         axis.text.x = element_text(angle=90, size = 10 ),
+         axis.title = element_text( size = 10, face = "bold" ),strip.text = element_text(size = 13, face = 'bold') )
+```
+
+
+### Total Nitrogen
+
+```{r message=FALSE, warning=FALSE, echo=F,fig.width=10, fig.height=5}
+p <- ggplot(lysimeter_sap, aes(x=as.Date(DATE), y=`N - Total Nitrogen\r\nppm`  , color=variety_leaf_type,linetype=`Type of leaf`,alpha=0.5)) +
+  geom_point() + geom_smooth(se=FALSE) +
+  xlab("")+ggtitle("`Nutrient content in leaf: N - Total Nitrogen ppm` ")+facet_grid(~LOCATION)+ylab(("`N - Total Nitrogen ppm` "))
+plotly::ggplotly(p)
+
+ggplot(lysimeter_sap_summary,aes(variety_leaf_type,mean_Total_Nitrogen_ppm, fill=VARIETY ))+geom_bar(stat="identity", position="dodge")+facet_grid(~LOCATION, scales="free_x")+
+     geom_text(aes(label=round(mean_Total_Nitrogen_ppm,1)), vjust=0.05,hjust=0.5, size=3)+ggtitle("Nutrient content in leaf: Mean Total Nitrogen ppm")+theme( axis.text = element_text( size = 10 ),
+         axis.text.x = element_text(angle=90, size = 10 ),
+         axis.title = element_text( size = 10, face = "bold" ),strip.text = element_text(size = 13, face = 'bold') )
+
+```
+
+
+```{r message=FALSE, warning=FALSE, echo=F,fig.width=10, fig.height=10}
+
+
+ggplot(lysimeter_sap_summary,aes(variety_leaf_type,mean_Total_Nitrogen_ppm, fill=VARIETY ))+geom_bar(stat="identity", position="dodge")+facet_wrap(LOCATION~`Type of leaf`, scales="free_x")+
+     geom_text(aes(label=round(mean_Total_Nitrogen_ppm,1)), vjust=0.05,hjust=0.5, size=3)+ggtitle("Nutrient content in leaf: Mean Total Nitrogen ppm")+theme( axis.text = element_text( size = 10 ),
+         axis.text.x = element_text(angle=90, size = 10 ),
+         axis.title = element_text( size = 10, face = "bold" ),strip.text = element_text(size = 13, face = 'bold') )
+
+
+```
+
+### Sugar (%)
+
+```{r message=FALSE, warning=FALSE, echo=F,fig.width=10, fig.height=5}
+p <- ggplot(lysimeter_sap, aes(x=as.Date(DATE), y=`Sugar\r\n%` , color=variety_leaf_type,linetype=`Type of leaf`,alpha=0.5)) +
+  geom_point() + geom_smooth(se=FALSE) +
+  xlab("")+ggtitle("Nutrient content in leaf: Sugar (%) ")+facet_grid(~LOCATION)+ylab(("Sugar (%) "))
+plotly::ggplotly(p)
+
+ggplot(lysimeter_sap_summary,aes(variety_leaf_type,mean_sugar_percent, fill=VARIETY ))+geom_bar(stat="identity", position="dodge")+facet_grid(~LOCATION, scales="free_x")+
+     geom_text(aes(label=round(mean_sugar_percent,1)), vjust=0.05,hjust=0.5, size=3)+ggtitle("Nutrient content in leaf: Mean Sugar (%)")+theme( axis.text = element_text( size = 10 ),
+         axis.text.x = element_text(angle=90, size = 10 ),
+         axis.title = element_text( size = 10, face = "bold" ),strip.text = element_text(size = 13, face = 'bold') )
+
+```
+
+
+```{r message=FALSE, warning=FALSE, echo=F,fig.width=10, fig.height=10}
+
+
+ggplot(lysimeter_sap_summary,aes(variety_leaf_type,mean_sugar_percent, fill=VARIETY ))+geom_bar(stat="identity", position="dodge")+facet_wrap(LOCATION~`Type of leaf`, scales="free_x")+
+     geom_text(aes(label=round(mean_sugar_percent,1)), vjust=0.05,hjust=0.5, size=3)+ggtitle("Nutrient content in leaf: Mean Sugar (%)")+theme( axis.text = element_text( size = 10 ),
+         axis.text.x = element_text(angle=90, size = 10 ),
+         axis.title = element_text( size = 10, face = "bold" ),strip.text = element_text(size = 13, face = 'bold') )
+```
+
+
+### pH
+
+```{r message=FALSE, warning=FALSE, echo=F,fig.width=10, fig.height=5}
+p <- ggplot(lysimeter_sap, aes(x=as.Date(DATE), y=`pH\r\r\n`  , color=variety_leaf_type,linetype=`Type of leaf`,alpha=0.5)) +
+  geom_point() + geom_smooth(se=FALSE) +
+  xlab("")+ggtitle("pH ")+facet_grid(~LOCATION)+ylab(("pH "))
+plotly::ggplotly(p)
+
+ggplot(lysimeter_sap_summary,aes(variety_leaf_type,mean_pH, fill=VARIETY ))+geom_bar(stat="identity", position="dodge")+facet_grid(~LOCATION, scales="free_x")+
+     geom_text(aes(label=round(mean_pH,1)), vjust=0.05,hjust=0.5, size=3)+ggtitle("pH")+theme( axis.text = element_text( size = 10 ),
+         axis.text.x = element_text(angle=90, size = 10 ),
+         axis.title = element_text( size = 10, face = "bold" ),strip.text = element_text(size = 13, face = 'bold') )
+
+
+```
+
+```{r message=FALSE, warning=FALSE, echo=F,fig.width=10, fig.height=10}
+
+ggplot(lysimeter_sap_summary,aes(variety_leaf_type,mean_pH, fill=VARIETY ))+geom_bar(stat="identity", position="dodge")+facet_wrap(LOCATION~`Type of leaf`, scales="free_x")+
+     geom_text(aes(label=round(mean_pH,1)), vjust=0.05,hjust=0.5, size=3)+ggtitle("pH")+theme( axis.text = element_text( size = 10 ),
+         axis.text.x = element_text(angle=90, size = 10 ),
+         axis.title = element_text( size = 10, face = "bold" ),strip.text = element_text(size = 13, face = 'bold') )
+```
+
+```{r echo=F}
+data_with_model_outlier_check_by_location_lysimeter = 
+function(dataset, dsr.threshold){
+  outlier.df = NULL
+  for(i in 1:length(traits)){
+  #dataset$id = seq(1,dim(dataset)[1],1)
+    #print(traits[i])
+  ## Subsetting only for the DSR trait
+    temp = dataset %>% filter(type == traits[i])
+    temp$row_number=rownames(temp)
+  ## Subsetting based on missing data
+    #temp = temp[temp$MissingDataFlag==FALSE,]
+  
+  ## Fitting the simple model
+     model = lmer(value ~ as.factor(hybrid_type_leaf)  + (1|LOCATION),data=temp)
+  
+  
+  ## Calculating Studentized residuals, and taking absolute values
+    Stud.Residual = abs(stats::rstudent(model))
+    #print(length(Stud.Residual))
+  ## Appending DSR values to the existing table
+    sr.df=as.data.frame(Stud.Residual)
+    sr.df$row_number=rownames(sr.df)
+    temp = temp%>% left_join(sr.df)
+    #temp = as.data.frame(cbind(temp,Stud.Residual))
+    temp$trait = traits[i]
+  
+  ## Flagging DSR outlier based on threshold
+    temp$DSR_by_location_outlier_flag = ifelse(abs(temp$Stud.Residual)>dsr.threshold,TRUE,FALSE)
+  
+  ## Merging with original dataset
+  #temp = temp[,c("id","Stud.Residual","DSR_outlier_flag")]
+  #dataset1 = merge(dataset,temp,by = "id", all.x = TRUE)
+  #dataset1 = dataset1[,-1]
+  outlier.df = rbind(outlier.df,temp)
+  }
+  return(outlier.df)
+}
+```
+
+
+# Statistical analysis - Lysimeter data
+
+```{r message=FALSE, warning=FALSE, echo=F,fig.width=10, fig.height=5}
+
+
+
+
+
+
+
+
+
+
+
+
+#turkey_data_irr = read_excel("/mnt/data/SSC Irricagation results final v3 revized.xlsx",skip=3)
+
+#names(turkey_data_irr)[7] = "replicate"
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ssc_hybrids = c("EW6846XKL1" ,"EW6015XKL1","EW6436XKL1","EW6650XKP1","EW6526XKL1","EW6846","EW6436","DKC6836SC","DKC7236SC","ET6641SC","DKC6648SC")
+ 
+lysimeter_sap_summary = lysimeter_sap_summary %>% mutate(hybrid_type = ifelse(VARIETY %in% ssc_hybrids, "ssc","tall"))
+
+lysimeter_sap_summary =lysimeter_sap_summary %>% mutate(hybrid_type_leaf= paste(hybrid_type, `Type of leaf`, sep="_"))
+
+
+lysimeter_sap_summary_long = lysimeter_sap_summary %>% gather(type,value,5:16)
+#calculating WUE
+#For the WUE I think this is correct, but maybe you can use as units KG/mm3 to avoid so much decimals.
+traits = unique(lysimeter_sap_summary_long$type)
+outlier_data = data_with_model_outlier_check_by_location_lysimeter(lysimeter_sap_summary_long,3)
+
+
+table(outlier_data$DSR_by_location_outlier_flag)
+
+ssc_data_outlier_no_outlier = filter(outlier_data,DSR_by_location_outlier_flag==FALSE )
+#table(ssc_data_outlier_no_outlier$DSR_by_location_outlier_flag)
+
+DT::datatable(ssc_data_outlier_no_outlier, filter="top")
+
+```
+
+
+
+```{r message=FALSE, warning=FALSE, echo=F,fig.width=15, fig.height=15}
+
+
+#only SSCs
+  ssc_data=ssc_data_outlier_no_outlier
+ 
+
+
+#ssc_data_no_nas_ssc = ssc_data_high_ye%>% filter(hybrid %in% c("EW6846"))
+   library(multcompView)
+ssc_data$VARIETY = as.factor(ssc_data$hybrid_type_leaf)
+
+ssc_data$replicate  = as.factor(ssc_data$LOCATION  )
+
+
+
+#STANDART 100
+
+mod_results=by_location_analysis(ssc_data) 
+lsmeans_results = as.data.frame(mod_results[1])
+anova_results = as.data.frame(mod_results[2])
+contrast_results = as.data.frame(mod_results[3])
+
+#ssc_hybrids = c("EW6846XKL1" ,"EW6015XKL1","EW6436XKL1","EW6650XKP1","EW6526XKL1","EW6846","EW6436")
+ 
+#lsmeans_results = lsmeans_results %>% mutate(hybrid_type = ifelse(hybrid_name %in% ssc_hybrids, "ssc","tall"))
+
+library(stringr)
+lsmeans_results_ps= lsmeans_results %>%
+  mutate_if(is.character, str_trim)
+lsmeans_results_ps= lsmeans_results_ps %>%
+  mutate(across(where(is.character), str_remove_all, pattern = fixed(" ")))
+ 
+lsmeans_results_ps$Group = as.factor(lsmeans_results_ps$.group)
+lsmeans_results_ps= lsmeans_results_ps %>% mutate_if(is.numeric, round, 1)
+pd <- position_dodge(0.1)
+
+DT::datatable(lsmeans_results_ps, filter="top")
+lsmeans_results_ps = lsmeans_results_ps %>% separate(VARIETY, into=c("hybrid","leaft_type"),sep="_",remove=F)
+
+lsmeans_results_ps_1 = filter(lsmeans_results_ps, Trait %in% c("mean_Phosphorous_ppm","mean_Potassium_ppm","mean_Sulfur_ppm","mean_Zinc_ppm"))
+
+plot_lsmeans=ggplot(lsmeans_results_ps_1,aes(reorder( VARIETY,-lsmean),lsmean, fill=as.factor(VARIETY)))+geom_bar(stat="identity",position="dodge")+xlab("Product")+ylab(" LSMeans")+
+  #theme_classic() + 
+  theme( axis.text = element_text( size = 10 ),
+         axis.text.x = element_text( size = 10 ),
+         axis.title = element_text( size = 10, face = "bold" ),strip.text = element_text(size = 13, face = 'bold') ) +
+     geom_text(aes(label=lsmean,y = lsmean, group = VARIETY), position = position_dodge(width = 0.8), vjust = -0.9, 
+            size = 3)+ theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))+
+  geom_errorbar(aes(ymin=lsmean-SE, ymax=lsmean+SE), width=.2,
+                position=position_dodge(.9))+xlab("Factor")+ylab("lsmeans")+geom_text(aes(label = Group, y = 5, group = VARIETY), vjust = -0.9, 
+            size = 3, position = position_dodge(width = 0.8))+xlab("Hybrid_Leaf_type")+facet_wrap(Trait~leaft_type,scales="free")+ggtitle("Statistical comparison of mineral levels in the leaf between SSC vs Tall across 2 locations")
+plot_lsmeans
+
+#DT::datatable(anova_results)
+  #DT::datatable(lsmeans_results)
+  
+#plot_lsmeans_ssc_only(lsmeans_results)
+
+lsmeans_results_ps_2 = filter(lsmeans_results_ps, Trait %in% c("mean_Calcium_ppm","mean_Magnesium_ppm","mean_Sodium_ppm"  ))
+
+plot_lsmeans=ggplot(lsmeans_results_ps_2,aes(reorder( VARIETY,-lsmean),lsmean, fill=as.factor(VARIETY)))+geom_bar(stat="identity",position="dodge")+xlab("Product")+ylab(" LSMeans")+
+  #theme_classic() + 
+  theme( axis.text = element_text( size = 10 ),
+         axis.text.x = element_text( size = 10 ),
+         axis.title = element_text( size = 10, face = "bold" ),strip.text = element_text(size = 13, face = 'bold') ) +
+     geom_text(aes(label=lsmean,y = lsmean, group = VARIETY), position = position_dodge(width = 0.8), vjust = -0.9, 
+            size = 3)+ theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))+
+  geom_errorbar(aes(ymin=lsmean-SE, ymax=lsmean+SE), width=.2,
+                position=position_dodge(.9))+xlab("Factor")+ylab("lsmeans")+geom_text(aes(label = Group, y = 5, group = VARIETY), vjust = -0.9, 
+            size = 3, position = position_dodge(width = 0.8))+xlab("Hybrid_Leaf_type")+facet_wrap(Trait~leaft_type,scales="free")+ggtitle("Statistical comparison of mineral levels in the leaf between SSC vs Tall across 2 locations")
+plot_lsmeans
+
+contrast_results = contrast_results%>% separate(contrast, into=c("SSC system 1","SSC system 2"), sep=" - ",remove=F)
+
+```
