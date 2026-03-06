@@ -1,0 +1,2071 @@
+---
+title: "SSC Soil Moisture Protocol in France - Comparison between SSC and TALL - Final report"
+author: "Naharajan Lakshmanaperumal, Senior Data Scientist, EMEA Agronomy"
+date: "25.11.2025"
+output:
+  slidy_presentation: default
+  beamer_presentation: default
+  pdf_document: default
+  html_document: default
+  ioslides_presentation: default
+  word_document:
+    reference_docx: south_africa_variety_data_report_final.docx
+always_allow_html: yes
+---
+
+# Contents
+
+<div class="logos"><img src="/mnt/images/emea_md_logo_3.PNG" width="50px" align="right"></div>
+ 
+<div class="logos"><img src="/mnt/images/RZ_EMEA_Sign_Claim_Screen_RGB_on_white (1) (1).png" width="100px" align="right"></div>
+
+
+- Protocol Summary
+
+- Raw data from Soil Moisture Protocol
+
+- Data Consolidation from all locations and addition of new columns
+
+- Exploratory data analysis 
+
+    - Overall data summary
+    
+    - Visualization of time series data using the coefficient normalization method
+
+- Statistical analysis
+  
+
+
+<div class="logos"><img src="/mnt/images/restricted.PNG" width="100px" align="right"></div>
+
+
+# SSC Soil Moisture Protocol - Comparison between SSC and TALL systems
+
+
+<div class="logos"><img src="/mnt/images/emea_md_logo_3.PNG" width="50px" align="right"></div>
+ 
+<div class="logos"><img src="/mnt/images/RZ_EMEA_Sign_Claim_Screen_RGB_on_white (1) (1).png" width="100px" align="right"></div>
+
+
+- **Objective**: To compare the soil moisture & temperature levels at different soil depths between the two hybrid systems of interest - SSC 40cm VS Tall 80cm row spacing.
+
+
+-SSC 40cm: **EZ5936XKPZ & Densité 3 : 120000 plt/ha & 40cm, 120000 plt/ha & 80cm narrow inter row spacing**    
+
+-Tall 80cm: **DKC5182 & Densité - 85000 plt/ha & 80cm , 95000 plt/ha & 40cm conventional inter row spacing**  
+
+# Raw data from Soil Moisture Protocol
+
+- Raw data for 2 protocols in sharepoint site: https://bayergroup.sharepoint.com/:f:/r/sites/006212/Shared%20Documents/MA%C3%8FS/2023/SSC%20-%20SMART%20CORN%20-%20PRECECON/CORHIZE?csf=1&web=1&e=tajaki
+
+
+```{r message=FALSE, warning=FALSE, echo=FALSE}
+
+
+library(readr)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+#library(lmerTest)
+#library(multcompView)
+library(readxl)
+library(plotly)
+library(lubridate)
+#library(dygraphs)
+
+#install.packages("lmerTest")
+#install.packages("multcompView")
+
+#DT::datatable(head(start_flex,100), filter="top")
+
+fichier = read_excel("/mnt/data/file_indication_probes_2025.xlsx")
+
+names(fichier)[1] = "year"
+names(fichier)[2] = "plot"
+names(fichier)[3] = "trial"
+names(fichier)[4] = "location"
+names(fichier)[5] = "system"
+names(fichier)[6] = "hybrid"
+names(fichier)[7] = "hybrid_type"
+names(fichier)[8] = "density"
+names(fichier)[9] = "row_spacing_cm"
+names(fichier)[10] = "file_name"
+names(fichier)[11] = "planting_date"
+names(fichier)[12] = "period_analysis"
+names(fichier)[13] = "latitude"
+names(fichier)[14] = "longitude"
+
+fichier = fichier %>% unite(trial_plot, trial, plot, sep="__", remove=F)
+fichier = fichier %>% separate(file_name, into=c("hybrid_type","hybrid_number","hybrid_rowspacing"),sep=" - ",remove=F)
+fichier = fichier %>% unite(trial_system, trial, hybrid_rowspacing, sep="__", remove=F)
+
+#SSC6 (100) 
+#SSC7 (75)
+
+
+planting_files <- list.files(path="/mnt/data/probes_data_2025/",pattern="*.xlsx", full.names=TRUE, recursive=TRUE)
+
+
+planting_files_df = data.frame(full_file_name=planting_files)
+
+planting_files_df = planting_files_df %>% separate(full_file_name, into=c("dir1","dir2","protocol","field","file_n","file_1","file_2"),sep="/",remove=F)
+
+planting_files_df$dir1 = NULL
+planting_files_df$file_n = NULL
+
+planting_files_df = planting_files_df %>% mutate(trial = ifelse(file_1=="SSC6","SSC6 (100)",ifelse(file_1=="SSC7_75","SSC7 (75)",file_1)))
+
+planting_files_df = planting_files_df %>% separate(file_2, into=c("hybrid_type","hybrid_number","hybrid_rowspacing"),sep=" - ",remove=F)
+
+#planting_files_df = planting_files_df %>% unite(trial_plot, trial, plot, sep="__", remove=F)
+
+planting_files_df = planting_files_df %>% unite(trial_system, trial, hybrid_rowspacing, sep="__", remove=F)
+
+planting_files_df = planting_files_df %>% inner_join(fichier)
+
+planting_points_data_all=data.frame()
+
+
+for (i in 1:nrow(planting_files_df)){
+ 
+  #print(planting_files_df[i])
+  #load(files[i])
+ 
+  #print(dim(t))
+ c <- read_excel(planting_files_df$full_file_name[i],skip=2)
+   start_flex=c
+   
+   #glimpse(loc_dataset)
+   names(start_flex)[2] = "average_moisture"
+names(start_flex)[3] = "soil_mois_1_10"
+names(start_flex)[4] = "soil_mois_2_20"
+names(start_flex)[5] = "soil_mois_3_30"
+names(start_flex)[6] = "soil_mois_4_40"
+names(start_flex)[7] = "soil_mois_5_50"
+names(start_flex)[8] = "soil_mois_6_60"
+names(start_flex)[9] = "rain_gauge"
+names(start_flex)[10] = "soil_temp_1_10"
+names(start_flex)[11] = "soil_temp_2_20"
+names(start_flex)[12] = "soil_temp_3_30"
+names(start_flex)[13] = "soil_temp_4_40"
+names(start_flex)[14] = "soil_temp_5_50"
+names(start_flex)[15] = "soil_temp_6_60"
+start_flex$`Ambient Temperature`= NULL
+start_flex$`Relative Humidity`= NULL
+start_flex$location_name = planting_files_df$location[i]
+start_flex$location = planting_files_df$location[i]
+start_flex$hybrid = planting_files_df$hybrid[i]
+start_flex$interrow_spacing = planting_files_df$row_spacing_cm[i]
+start_flex$filename = planting_files_df$file_name[i]
+start_flex$latitude = planting_files_df$latitude[i]
+start_flex$longitude = planting_files_df$longitude[i]
+start_flex$sowing_date = planting_files_df$planting_date[i]
+#start_flex$harvest_date = planting_files_df$harvest_date[i]
+start_flex$system = planting_files_df$system[i]
+start_flex$density = planting_files_df$density[i]
+start_flex$hybrid_type = planting_files_df$hybrid_type[i]
+start_flex = filter(start_flex, !is.na(soil_mois_1_10))
+
+     planting_points_data_all = bind_rows(planting_points_data_all, start_flex)
+
+}
+
+
+write_csv(planting_points_data_all,"/mnt/data/SSC_probes_trials_consolidated_data_2025_season.csv")
+
+sondes_data = planting_points_data_all
+
+sondes_data$rain_gauge= NULL
+
+sondes_data_long = sondes_data %>% gather(trait,value,2:14)
+
+unique(sondes_data_long$trait)
+unique(sondes_data_long$system)
+
+
+sondes_data_long = sondes_data_long %>% mutate(trait_type = ifelse(trait %in% c("average_moisture","soil_mois_1_10","soil_mois_2_20","soil_mois_3_30","soil_mois_4_40","soil_mois_5_50" , "soil_mois_6_60"),"capacity sensors","temperature"))
+
+sondes_data_long$dat = as.Date(sondes_data_long$Date)
+
+sondes_data_gather_summary_1 = sondes_data_long %>% group_by(location,system,trait,dat) %>% arrange(dat) %>%summarise(mean_value=mean(value))
+sondes_data_gather_summary_1 = sondes_data_gather_summary_1 %>% unite(hybrid_factor_trait, location,system,trait, sep="__", remove=F)
+
+
+sondes_data_gather_summary_2 = sondes_data_gather_summary_1 %>% group_by(hybrid_factor_trait) %>% arrange(dat) %>%  mutate(rank_day=row_number()) %>% filter(rank_day==1)
+
+#sondes_data_2_gather_summary_2 = sondes_data_2_gather_summary_1 %>% group_by(trait) %>% mutate(max_or_min= ifelse(mean_value==max(mean_value), "max","not_max"),coefficient= mean_value/min(mean_value), final_coefficient= coefficient) %>% unite(hybrid_factor_trait, hybrid_factor,trait, sep="__", remove=F) 
+
+sondes_data_gather_summary_2 = sondes_data_gather_summary_2 %>% group_by(location,trait) %>% mutate(max_or_min= ifelse(mean_value==max(mean_value), "max","min"),coefficient= max(mean_value)/mean_value, final_coefficient= ifelse(max_or_min=="min",coefficient,1)) %>% unite(hybrid_factor_trait, location,system,trait, sep="__", remove=F)
+
+sondes_data_gather_summary_3 = sondes_data_gather_summary_2 %>% dplyr::select(hybrid_factor_trait,final_coefficient)
+
+sondes_data_gather_summary_1 = merge(sondes_data_gather_summary_1,sondes_data_gather_summary_3,by="hybrid_factor_trait")
+
+sondes_data_gather_summary_1 = sondes_data_gather_summary_1 %>% mutate(value_transformed= mean_value*final_coefficient)
+
+
+```
+
+# Exploratory data analysis - Data normalization using a coefficient method
+
+
+- **Calculation of coefficient**:- Ratio of moisture level between maximum and all levels of moisture observed on the first day per location
+
+- The coefficient calculated per trait based on the first shared day across all hybrids was then prapogated to the corresponsing values of that specific trait for the complete dataset  
+
+![](/mnt/data/coefficient_method_ssc_1.jpg)
+
+
+```{r message=FALSE, warning=FALSE, echo=FALSE}
+DT::datatable(sondes_data_gather_summary_1, filter="top")
+
+```
+
+# Capacity sensors data - Time series visualization
+
+```{r message=FALSE, warning=FALSE, echo=FALSE,fig.height=15, fig.width=15}
+
+sondes_data_gather_summary_1 = sondes_data_gather_summary_1 %>% mutate(trait_type = ifelse(trait.x %in% c("average_moisture","soil_mois_1_10","soil_mois_2_20","soil_mois_3_30","soil_mois_4_40","soil_mois_5_50" , "soil_mois_6_60"),"capacity sensors","temperature"))
+
+
+
+sondes_data_2_gather_summary_1_plot = filter(sondes_data_gather_summary_1, trait_type=="capacity sensors")
+
+#sondes_data_2_gather_summary_1_plot = filter(sondes_data_2_gather_summary_1_plot, location.x == "SENESTIS")
+
+unique(sondes_data_2_gather_summary_1_plot$trait.x)
+
+sondes_data_2_gather_summary_1_plot = sondes_data_2_gather_summary_1_plot %>% unite(hybrid_trait,system, sep="__", remove=F)
+
+p <- ggplot(sondes_data_2_gather_summary_1_plot, aes(x=as.Date(dat), y=value_transformed, color=hybrid_trait,alpha=0.5)) +
+  geom_line() + 
+  xlab("")+ggtitle("Soil moisture - Using the Coefficient method")+facet_grid(trait.x~location.x,scales="free_y")
+plotly::ggplotly(p)
+
+
+# sondes_data_2_gather_summary_1_plot = filter(sondes_data_gather_summary_1, trait_type!="capacity sensors")
+# 
+# #sondes_data_2_gather_summary_1_plot = filter(sondes_data_2_gather_summary_1_plot, location.x == "SENESTIS")
+# 
+# unique(sondes_data_2_gather_summary_1_plot$trait.x)
+# 
+# sondes_data_2_gather_summary_1_plot = sondes_data_2_gather_summary_1_plot %>% unite(hybrid_trait, hybrid_type,system, sep="__", remove=F)
+# 
+# p <- ggplot(sondes_data_2_gather_summary_1_plot, aes(x=as.Date(dat), y=value_transformed, color=hybrid_trait,alpha=0.5)) +
+#   geom_line() + 
+#   xlab("")+ggtitle("Soil temperature - Using the Coefficient method")+facet_grid(trait.x~trait_type,scales="free_y")
+# plotly::ggplotly(p)
+```
+
+# Soil temperature data - Time series visualization
+
+```{r message=FALSE, warning=FALSE, echo=FALSE,fig.height=15, fig.width=15}
+sondes_data_gather_summary_1 = sondes_data_gather_summary_1 %>% mutate(trait_type = ifelse(trait.x %in% c("average_moisture","soil_mois_1_10","soil_mois_2_20","soil_mois_3_30","soil_mois_4_40","soil_mois_5_50" , "soil_mois_6_60"),"capacity sensors","temperature"))
+
+
+
+sondes_data_2_gather_summary_1_plot_temp = filter(sondes_data_gather_summary_1, trait_type=="temperature")
+
+#sondes_data_2_gather_summary_1_plot = filter(sondes_data_2_gather_summary_1_plot, location.x == "SENESTIS")
+
+unique(sondes_data_2_gather_summary_1_plot_temp$trait.x)
+
+sondes_data_2_gather_summary_1_plot_temp = sondes_data_2_gather_summary_1_plot_temp %>% unite(hybrid_trait,system, sep="__", remove=F)
+
+p <- ggplot(sondes_data_2_gather_summary_1_plot_temp, aes(x=as.Date(dat), y=value_transformed, color=hybrid_trait,alpha=0.5)) +
+  geom_line() + 
+  xlab("")+ggtitle("Soil Temperature - Using the Coefficient method")+facet_grid(trait.x~location.x,scales="free_y")
+plotly::ggplotly(p)
+
+```
+
+# Periods of time to delta sum
+
+**Request fron Gabrial Goncalves**
+
+Capacitive probes analysis (all analysis that we talked about)
+            - Soil Moisture and Temperature  
+            
+            The periods for calculating the accumulated delta are indicated in the spreadsheet (Discharge periods (moisture delta analysis))
+
+Along with the corrections to be made to the discharge periods, is it also possible to perform a statistical difference analysis using only the average of the accumulated delta of horizons 1 and 2? Just like you did for the overall average, but only with depths of 10 and 20 cm?  
+
+# Location SENESTIS
+
+
+SSC1	#	from up	to
+Discharge period
+
+  1	July - 02	July - 08  
+	2	July - 09	July - 11  
+	3	July - 12	July - 15  
+	4	July - 16	July - 17 
+	5	July - 19	July - 22 
+	6	July - 23	July - 26 
+	7	July - 27	July - 28   
+	8	July - 29	July - 31  
+	9	August - 01	August - 03  
+	10	August - 07	August - 09  
+	11	August - 10	August - 11  
+	12	August - 12	August - 16
+	13	August - 17	August - 19  
+	14	August - 20	August - 27  
+	
+	
+	
+	
+July 3 - July 8
+July 9 - July 12
+July 13 - July 15
+delete
+OK - do not change
+July 24 - July 26
+delete
+July 30 - July 31
+Aug 1 - Aug 4
+Aug 5 - Aug 7
+delete
+Aug 13 - Aug 16
+delete
+Aug 21 - Aug 27
+
+	
+
+```{r message=FALSE, warning=FALSE, echo=FALSE,fig.height=15, fig.width=15}
+#sondes_data_2_gather_summary_1_plot
+
+
+
+sondes_data_2_gather_summary_1_plot_1 = filter(sondes_data_2_gather_summary_1_plot, location.x == "SENESTIS")
+
+sondes_data_2_gather_summary_1_plot_1 = sondes_data_2_gather_summary_1_plot_1 %>% mutate(hybrid_rowwidth= ifelse(system=="DKC5812 Densité tradi - 95 000 plt/ha - 40 cm","DKC5812_40cm",ifelse(system=="DKC5812 FARMER SYSTEM - 85 000 plt/ha - 80 cm","DKC5812_80cm",ifelse(system=="EZ5936XKPZ - Densité 2: 120 000 plt/ha - 40 cm","EZ5936XKPZ_40cm","EZ5936XKPZ_80cm"))))
+
+unique(sondes_data_2_gather_summary_1_plot_1$trait.x)
+
+sondes_data_2_gather_summary_1_plot_1 = sondes_data_2_gather_summary_1_plot_1 %>% unite(hybrid_trait,system, sep="__", remove=F)
+
+p <- ggplot(sondes_data_2_gather_summary_1_plot_1, aes(x=as.Date(dat), y=value_transformed, color=hybrid_trait,alpha=0.5)) +
+  geom_line() + 
+  xlab("")+ggtitle("Soil Moisture (%) - Using the Coefficient method")+facet_grid(trait.x~location.x,scales="free_y")
+plotly::ggplotly(p)
+```
+
+
+```{r message=FALSE, warning=FALSE, echo=FALSE,fig.height=10, fig.width=12}
+#dates_1 = c(seq(ymd('2024-07-16'),ymd('2024-07-19'),by='days'),seq(ymd('2024-07-21'),ymd('2024-07-23'),by='days'),seq(ymd('2024-07-25'),ymd('2024-07-26'),by='days'),seq(ymd('2024-07-28'),ymd('2024-07-29'),by='days'),seq(ymd('2024-08-02'),ymd('2024-08-06'),by='days'),seq(ymd('2024-08-07'),ymd('2024-08-09'),by='days'),seq(ymd('2024-08-10'),ymd('2024-08-11'),by='days'),seq(ymd('2024-08-20'),ymd('2024-08-29'),by='days'),seq(ymd('2024-09-04'),ymd('2024-09-05'),by='days'),seq(ymd('2024-09-12'),ymd('2024-09-21'),by='days'),seq(ymd('2024-09-26'),ymd('2024-10-05'),by='days'),seq(ymd('2024-10-10'),ymd('2024-10-13'),by='days'))
+
+dates_1 = c('2025-07-03','2025-07-08','2025-07-09','2025-07-12','2025-07-13','2025-07-15','2025-07-19','2025-07-22','2025-07-24','2025-07-26','2025-07-30','2025-07-31','2025-08-01','2025-08-04','2025-08-05','2025-08-07','2025-08-13','2025-08-16','2025-08-21','2025-08-27')
+
+dates_1 = ymd(dates_1) 
+
+
+
+
+
+sondes_data_2_gather_summary_1_plot_1_dates = filter(sondes_data_2_gather_summary_1_plot_1, dat%in% dates_1)
+
+sondes_data_2_gather_summary_1_plot_1_dates = sondes_data_2_gather_summary_1_plot_1_dates %>% mutate(first_or_last=ifelse(dat %in% ymd(c('2025-07-03','2025-07-09','2025-07-13','2025-07-19','2025-07-24','2025-07-30','2025-08-01','2025-08-05','2025-08-13','2025-08-21')),"first","last"))
+
+p <- ggplot(sondes_data_2_gather_summary_1_plot_1_dates, aes(x=as.Date(dat), y=value_transformed, color=hybrid_trait,alpha=0.5)) +
+  geom_point() + 
+  xlab("")+ggtitle("Soil Temperature - Using the Coefficient method")+facet_grid(trait.x~location.x,scales="free_y")
+plotly::ggplotly(p)
+
+
+#ifelse(as.Date(date, "%d/%m/%Y") < as.Date("2001-02-02"), 1, 2)
+#data %>% filter(as.Date(date1) %within% interval(start_date, current_date) | as.Date(date2) %within% interval(current_date, end_date) | (is.na(date1) & is.na(date2)))
+
+sondes_data_2_gather_summary_1_plot_1_dates = sondes_data_2_gather_summary_1_plot_1_dates %>% mutate(date_phases = ifelse(dat >='2025-07-03' & dat <='2025-07-08', "01_phase",ifelse(dat >='2025-07-09' & dat <='2025-07-12', "02_phase",ifelse(dat >='2025-07-13' & dat <='2025-07-15', "03_phase",ifelse(dat >='2025-07-19' & dat <='2025-07-22', "05_phase",ifelse(dat >='2025-07-24' & dat <='2025-07-26', "06_phase",ifelse(dat >='2025-07-30' & dat <='2025-07-31', "08_phase",ifelse(dat >='2025-08-01' & dat <='2025-08-04', "09_phase",ifelse(dat >='2025-08-05' & dat <='2025-08-07', "10_phase",ifelse(dat >='2025-08-13' & dat <='2025-08-16', "12_phase", "13_phase"))))))))))
+
+#DT::datatable(sondes_data_2_gather_summary_1_plot_1_dates, filter="top")
+
+#sondes_data_2_gather_summary_1_plot_1_dates_spread = sondes_data_2_gather_summary_1_plot_1_dates %>% spread(first_or_last,value_transformed) 
+# %>%
+#  mutate(rf.diff = rf - first(rf))
+sondes_data_2_gather_summary_1_plot_1_dates_summary = sondes_data_2_gather_summary_1_plot_1_dates %>% group_by(system,trait.y,date_phases,hybrid_rowwidth) %>% mutate(delta=round(first(value_transformed)-value_transformed,4))
+
+sondes_data_2_gather_summary_1_plot_1_dates_summary_1 = filter(sondes_data_2_gather_summary_1_plot_1_dates_summary, first_or_last!="first")
+
+
+#sondes_data_2_gather_summary_1_plot_1_dates_summary_1 = filter(sondes_data_2_gather_summary_1_plot_1_dates_summary, delta>0)
+
+DT::datatable(sondes_data_2_gather_summary_1_plot_1_dates_summary_1, filter="top")
+
+
+#pdf = df %>% group_by(group) %>% mutate(cs = cumsum(sales))
+
+p <- ggplot(sondes_data_2_gather_summary_1_plot_1_dates_summary_1, aes(x=as.Date(dat), y=delta, color=system,alpha=0.5)) +
+  geom_line()+geom_point()+
+  xlab("")+ggtitle("Dynamics of delta across the season")+facet_grid(trait.x~location.x,scales="free_y")
+plotly::ggplotly(p)
+
+#calculate cumulative delta over the different phases (periods)
+sondes_data_2_gather_summary_1_plot_1_dates_summary_1 = sondes_data_2_gather_summary_1_plot_1_dates_summary_1 %>% mutate(delta = ifelse(delta <0, 0, delta))
+
+cumulative_data = sondes_data_2_gather_summary_1_plot_1_dates_summary_1 %>% group_by(location.x,trait.x,hybrid_trait) %>% mutate(cumulative_delta = cumsum(delta))
+
+p <- ggplot(cumulative_data, aes(x=as.Date(dat), y=cumulative_delta, color=system,alpha=0.5)) +
+  geom_line()+geom_point()+
+  xlab("")+ggtitle("Dynamics of cumulative delta across the season")+facet_grid(trait.x~location.x)
+plotly::ggplotly(p)
+cumulative_1 = p
+
+
+delta_data = sondes_data_2_gather_summary_1_plot_1_dates_summary_1 %>% group_by(location.x ,system,trait.x,hybrid_trait,hybrid_factor_trait,hybrid_rowwidth) %>% summarise(sum_deltas= sum(delta),mean_deltas= mean(delta))
+
+DT::datatable(delta_data, filter="top")
+
+p=ggplot(delta_data, aes(hybrid_rowwidth,sum_deltas,fill=system))+geom_bar(stat="identity", position="dodge")+facet_grid(trait.x~location.x)
+plotly::ggplotly(p)
+
+delta_data_1 = filter(delta_data, trait.x!="average_moisture")
+```
+
+
+```{r message=FALSE, warning=FALSE, echo=F}
+library(readxl)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(lmerTest)
+library(stringr)
+
+###Function which flags plot values with DSR > threshold for DSR traits 
+data_with_model_outlier_check_by_location = function(dataset, dsr.threshold){
+  outlier.df = NULL
+  for(i in 1:length(traits)){
+  #dataset$id = seq(1,dim(dataset)[1],1)
+    #print(traits[i])
+  ## Subsetting only for the DSR trait
+    temp = dataset %>% filter(type == traits[i])
+    temp$row_number=rownames(temp)
+  ## Subsetting based on missing data
+    #temp = temp[temp$MissingDataFlag==FALSE,]
+  
+  ## Fitting the simple model
+     model = lmer(sum_deltas ~ as.factor(system)  + (1|trait.x),data=temp)
+  
+  
+  ## Calculating Studentized residuals, and taking absolute values
+    Stud.Residual = abs(stats::rstudent(model))
+    #print(length(Stud.Residual))
+  ## Appending DSR values to the existing table
+    sr.df=as.data.frame(Stud.Residual)
+    sr.df$row_number=rownames(sr.df)
+    temp = temp%>% left_join(sr.df)
+    #temp = as.data.frame(cbind(temp,Stud.Residual))
+    temp$trait = traits[i]
+  
+  ## Flagging DSR outlier based on threshold
+    temp$DSR_by_location_outlier_flag = ifelse(abs(temp$Stud.Residual)>dsr.threshold,TRUE,FALSE)
+  
+  ## Merging with original dataset
+  #temp = temp[,c("id","Stud.Residual","DSR_outlier_flag")]
+  #dataset1 = merge(dataset,temp,by = "id", all.x = TRUE)
+  #dataset1 = dataset1[,-1]
+  outlier.df = rbind(outlier.df,temp)
+  }
+  return(outlier.df)
+}
+
+
+by_location_analysis = function(data_df_long){
+  #traits = unique(data_df_long$trait)
+  #data_df_long$rep = as.factor(data_df_long$rep)
+traits= unique(data_df_long$type)
+ 
+  analysis_type="Across location"
+  means.df = NULL
+  anova.df=NULL
+  delta_table = NULL
+  for(i in 1:length(traits)){
+    #print(traits[i])
+    temp = filter(data_df_long, trait == traits[i])
+    temp = filter(temp, sum_deltas!="NA")
+    #print(dim(temp))
+    #temp = filter(data_df_long, trait == traits[i])
+    #temp_wide=temp %>% spread(trait, value)
+     # model = lmerTest::lmer(value ~ productName+ (1|unique_location_name), data = temp)
+ mmod = lmer(sum_deltas ~ as.factor(system)  + (1|trait.x),data=temp)
+     
+anv = as.data.frame(anova(mmod))
+  #Protocol = rep(unique(test.set$PROTOCOL),dim(anv)[1])
+ # Set = rep(unique(test.set$SET),dim(anv)[1])
+  #Effect = row.names(anv)
+  #anova.table = data.frame(Protocol,Effect,anv[,2:dim(anv)[2]])
+  anv$CV = sjstats::cv(mmod)*100
+  #anv$marginal_rsquared = round(MuMIn::r.squaredGLMM(model)[1],2)
+  #anv$rsquared = round(MuMIn::r.squaredGLMM(mmod)[2],2)
+  anv= anv %>% mutate_if(is.numeric, round, 3)
+  anv = anv %>% mutate(pvalue= format.pval(`Pr(>F)`,digits=2, eps=0.001, nsmall=3))
+      
+    #anova_table$Field = NULL
+    anv$Trait= traits[i]
+     #nova_table$number_of_trials= length(unique(data_df_long$municipality))
+     #print(head(anova_table))
+      #means.df = rbind(means.df,lsm.df)
+      anova.df=rbind(anova.df,anv)
+      #View(anova.df)
+ lsm1 = emmeans::lsmeans(mmod,~system)  
+  #lsm1 = emmeans::lsmeans(mmod,~Irrigation:interrow_width)  
+  lsm1.df = multcomp::cld(lsm1,alpha=0.1,Letters=LETTERS,sort=TRUE,adjust="tukey")
+  
+  lsm1.df = as.data.frame(lsm1.df)      #lsm.df = create_TwoFactor_lsmeans_table(model, temp,traits[i],analysis_type)
+      #
+     # lsm.df$Field = NULL
+    lsm1.df$Trait= traits[i]
+    # lsm.df$number_of_trials= length(unique(data_df_long$municipality))
+      #lsm.df$Field = traits[i]
+      #anova_table= create_anova_table_new(model,temp,traits[i],analysis_type)
+      means.df = rbind(means.df,lsm1.df)
+      #anova.df=rbind(anova.df,anova_table)
+      delta1 = emmeans::contrast(lsm1,method="pairwise")
+  delta1.df = as.data.frame(summary(delta1,adjust="Tukey"))
+  delta1.df= delta1.df %>% mutate_if(is.numeric, round, 2)
+  delta1.df = delta1.df %>% mutate(Significance=ifelse(p.value<0.05, "Significant", ifelse(p.value >= 0.05 & p.value<0.1,"Significant","Not significant")))
+      #delta.df$Field = NULL
+    delta1.df$Trait= traits[i]
+    #delta.df$number_of_trials= length(unique(data_df_long$municipality))
+      delta_table = rbind(delta_table,delta1.df)
+  }
+  
+return(list(means.df,anova.df,delta_table))
+}
+```
+
+
+## Statistical analysis - Comparison of delta sums across all soil depths between the different hybrid systems.
+
+```{r message=FALSE, warning=FALSE, echo=F}
+model_data= delta_data_1
+model_data$type = "soil_moisture_percent"
+
+traits = unique(model_data$type)
+model_data$sum_deltas = as.double(model_data$sum_deltas )
+
+#model_data = model_data %>% filter(LOCATION== "ALMUDEVAR")
+
+outlier_data = data_with_model_outlier_check_by_location(model_data,3)
+
+
+table(outlier_data$DSR_by_location_outlier_flag)
+
+ssc_data_outlier_no_outlier = filter(outlier_data,DSR_by_location_outlier_flag==FALSE )
+#table(ssc_data_outlier_no_outlier$DSR_by_location_outlier_flag)
+
+#DT::datatable(ssc_data_outlier_no_outlier, filter="top")
+
+# model_data_summary = model_data %>% group_by(LOCATION,VARIETY,type,trait,replicate) %>% summarise(value= mean(value))
+# 
+# model_data_summary_loc1 = model_data_summary %>% filter(LOCATION== "ALMUDEVAR")
+# 
+# model_data_summary_loc1_trait1 = filter(model_data_summary_loc1, type=="Hydric potential (kPa) 30 cm")
+# 
+# model = lmerTest::lmer(value ~ VARIETY + (1|replicate), data = model_data_summary_loc1_trait1)
+# 
+# lsm1 = emmeans::lsmeans(model,~VARIETY)  
+# library(multcompView)
+#   lsm1.df = multcomp::cld(lsm1,alpha=0.1,Letters=LETTERS,sort=TRUE,adjust="none")
+```
+
+
+```{r message=FALSE, warning=FALSE, echo=F,fig.width=14}
+
+
+#only SSCs
+  ssc_data=ssc_data_outlier_no_outlier
+ 
+ssc_data_1 = ssc_data
+
+
+#ssc_data_no_nas_ssc = ssc_data_high_ye%>% filter(hybrid %in% c("EW6846"))
+   library(multcompView)
+ssc_data$system = as.factor(ssc_data$system)
+
+ssc_data$trait.x  = as.factor(ssc_data$trait.x  )
+
+
+
+#STANDART 100
+
+mod_results=by_location_analysis(ssc_data) 
+lsmeans_results = as.data.frame(mod_results[1])
+anova_results = as.data.frame(mod_results[2])
+contrast_results = as.data.frame(mod_results[3])
+
+#ssc_hybrids = c("EW6846XKL1" ,"EW6015XKL1","EW6436XKL1","EW6650XKP1","EW6526XKL1","EW6846","EW6436")
+ 
+#lsmeans_results = lsmeans_results %>% mutate(hybrid_type = ifelse(hybrid_name %in% ssc_hybrids, "ssc","tall"))
+
+library(stringr)
+lsmeans_results_ps= lsmeans_results %>%
+  mutate_if(is.character, str_trim)
+lsmeans_results_ps= lsmeans_results_ps %>%
+  mutate(across(where(is.character), str_remove_all, pattern = fixed(" ")))
+ 
+lsmeans_results_ps$Group = as.factor(lsmeans_results_ps$.group)
+lsmeans_results_ps= lsmeans_results_ps %>% mutate_if(is.numeric, round, 1)
+pd <- position_dodge(0.1)
+plot_lsmeans=ggplot(lsmeans_results_ps,aes(reorder( system,-lsmean),lsmean, fill=as.factor(system)))+geom_bar(stat="identity",position="dodge")+xlab("Product")+ylab(" LSMeans")+
+  #theme_classic() + 
+  theme( axis.text = element_text( size = 10 ),
+         axis.text.x = element_text( size = 10 ),
+         axis.title = element_text( size = 10, face = "bold" ),strip.text = element_text(size = 13, face = 'bold') ) +
+     geom_text(aes(label=lsmean,y = lsmean, group = system), position = position_dodge(width = 0.8), vjust = -0.9, 
+            size = 3)+ theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))+
+  geom_errorbar(aes(ymin=lsmean-SE, ymax=lsmean+SE), width=.2,
+                position=position_dodge(.9))+xlab("Factor")+ylab("lsmeans - Delta sum")+geom_text(aes(label = Group, y = -5, group = system), vjust = -0.9, 
+            size = 3, position = position_dodge(width = 0.8))+xlab("Hybrid")+ggtitle("SENESTIS - Comparison of Delta sum across all soil depths")
+plot_lsmeans
+
+plot_lsmeans_1 = plot_lsmeans
+
+
+#DT::datatable(anova_results)
+  #DT::datatable(lsmeans_results)
+  
+#plot_lsmeans_ssc_only(lsmeans_results)
+
+contrast_results = contrast_results%>% separate(contrast, into=c("SSC system 1","SSC system 2"), sep=" - ",remove=F)
+
+#DT::datatable(lsmeans_results_ps, filter="top")
+
+#DT::datatable(contrast_results, filter="top")
+
+```
+
+
+## Statistical analysis - Comparison of delta sums across 10 and 20 cm depths between the different hybrid systems.
+
+```{r message=FALSE, warning=FALSE, echo=F}
+model_data= delta_data_1
+model_data = filter(model_data,trait.x %in% c("soil_mois_1_10","soil_mois_2_20") )
+model_data$type = "soil_moisture_percent"
+ 
+traits = unique(model_data$type)
+model_data$sum_deltas = as.double(model_data$sum_deltas )
+
+#model_data = model_data %>% filter(LOCATION== "ALMUDEVAR")
+
+outlier_data = data_with_model_outlier_check_by_location(model_data,3)
+
+
+table(outlier_data$DSR_by_location_outlier_flag)
+
+ssc_data_outlier_no_outlier = filter(outlier_data,DSR_by_location_outlier_flag==FALSE )
+#table(ssc_data_outlier_no_outlier$DSR_by_location_outlier_flag)
+
+#DT::datatable(ssc_data_outlier_no_outlier, filter="top")
+
+# model_data_summary = model_data %>% group_by(LOCATION,VARIETY,type,trait,replicate) %>% summarise(value= mean(value))
+# 
+# model_data_summary_loc1 = model_data_summary %>% filter(LOCATION== "ALMUDEVAR")
+# 
+# model_data_summary_loc1_trait1 = filter(model_data_summary_loc1, type=="Hydric potential (kPa) 30 cm")
+# 
+# model = lmerTest::lmer(value ~ VARIETY + (1|replicate), data = model_data_summary_loc1_trait1)
+# 
+# lsm1 = emmeans::lsmeans(model,~VARIETY)  
+# library(multcompView)
+#   lsm1.df = multcomp::cld(lsm1,alpha=0.1,Letters=LETTERS,sort=TRUE,adjust="none")
+```
+
+
+```{r message=FALSE, warning=FALSE, echo=F,fig.width=14}
+
+
+#only SSCs
+  ssc_data=ssc_data_outlier_no_outlier
+ 
+ssc_data_1 = ssc_data
+
+
+#ssc_data_no_nas_ssc = ssc_data_high_ye%>% filter(hybrid %in% c("EW6846"))
+   library(multcompView)
+ssc_data$system = as.factor(ssc_data$system)
+
+ssc_data$trait.x  = as.factor(ssc_data$trait.x  )
+
+
+
+#STANDART 100
+
+mod_results=by_location_analysis(ssc_data) 
+lsmeans_results = as.data.frame(mod_results[1])
+anova_results = as.data.frame(mod_results[2])
+contrast_results = as.data.frame(mod_results[3])
+
+#ssc_hybrids = c("EW6846XKL1" ,"EW6015XKL1","EW6436XKL1","EW6650XKP1","EW6526XKL1","EW6846","EW6436")
+ 
+#lsmeans_results = lsmeans_results %>% mutate(hybrid_type = ifelse(hybrid_name %in% ssc_hybrids, "ssc","tall"))
+
+library(stringr)
+lsmeans_results_ps= lsmeans_results %>%
+  mutate_if(is.character, str_trim)
+lsmeans_results_ps= lsmeans_results_ps %>%
+  mutate(across(where(is.character), str_remove_all, pattern = fixed(" ")))
+ 
+lsmeans_results_ps$Group = as.factor(lsmeans_results_ps$.group)
+lsmeans_results_ps= lsmeans_results_ps %>% mutate_if(is.numeric, round, 1)
+pd <- position_dodge(0.1)
+plot_lsmeans=ggplot(lsmeans_results_ps,aes(reorder( system,-lsmean),lsmean, fill=as.factor(system)))+geom_bar(stat="identity",position="dodge")+xlab("Product")+ylab(" LSMeans")+
+  #theme_classic() + 
+  theme( axis.text = element_text( size = 10 ),
+         axis.text.x = element_text( size = 10 ),
+         axis.title = element_text( size = 10, face = "bold" ),strip.text = element_text(size = 13, face = 'bold') ) +
+     geom_text(aes(label=lsmean,y = lsmean, group = system), position = position_dodge(width = 0.8), vjust = -0.9, 
+            size = 3)+ theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))+
+  geom_errorbar(aes(ymin=lsmean-SE, ymax=lsmean+SE), width=.2,
+                position=position_dodge(.9))+xlab("Factor")+ylab("lsmeans - Delta sum")+geom_text(aes(label = Group, y = -5, group = system), vjust = -0.9, 
+            size = 3, position = position_dodge(width = 0.8))+xlab("Hybrid")+ggtitle("SENESTIS - Comparison of Delta sum across 10 and 20 cm depth")
+plot_lsmeans
+
+plot_lsmeans_10_1 = plot_lsmeans
+
+
+#DT::datatable(anova_results)
+  #DT::datatable(lsmeans_results)
+  
+#plot_lsmeans_ssc_only(lsmeans_results)
+
+contrast_results = contrast_results%>% separate(contrast, into=c("SSC system 1","SSC system 2"), sep=" - ",remove=F)
+
+
+
+
+
+#DT::datatable(lsmeans_results_ps, filter="top")
+
+#DT::datatable(contrast_results, filter="top")
+
+```
+
+# Location COUSSAN (SSC4)
+
+SSC4	#	from up	to
+Discharge periods	
+  1	July - 02	July - 06
+	2	July - 07	July - 11
+	3	July - 12	July - 18
+	4	July - 19	July - 24
+	5	July - 27	August - 02
+	6	August - 05	August - 13
+	7	August - 16	August - 18
+	8	August - 20	August - 27
+	9	August - 29	Sept - 07
+	10	Sept - 08	Sept - 09
+	
+	
+OK - do not change
+July 8 - July 12
+July 13 - July 18
+July 20 - July 25
+OK - do not change
+OK - do not change
+Aug 16 - Aug 27
+
+	
+	
+```{r message=FALSE, warning=FALSE, echo=FALSE,fig.height=15, fig.width=15}
+#sondes_data_2_gather_summary_1_plot
+
+
+
+sondes_data_2_gather_summary_1_plot_1 = filter(sondes_data_2_gather_summary_1_plot, location.x == "COUSSAN")
+
+sondes_data_2_gather_summary_1_plot_1 = sondes_data_2_gather_summary_1_plot_1 %>% mutate(hybrid_rowwidth= ifelse(system=="DKC5812 Densité tradi - 95 000 plt/ha - 40 cm","DKC5812_40cm",ifelse(system=="DKC5812 FARMER SYSTEM - 85 000 plt/ha - 80 cm","DKC5812_80cm",ifelse(system=="EZ5936XKPZ - Densité 2: 120 000 plt/ha - 40 cm","EZ5936XKPZ_40cm","EZ5936XKPZ_80cm"))))
+
+unique(sondes_data_2_gather_summary_1_plot_1$trait.x)
+
+sondes_data_2_gather_summary_1_plot_1 = sondes_data_2_gather_summary_1_plot_1 %>% unite(hybrid_trait,system, sep="__", remove=F)
+
+p <- ggplot(sondes_data_2_gather_summary_1_plot_1, aes(x=as.Date(dat), y=value_transformed, color=hybrid_trait,alpha=0.5)) +
+  geom_line() + 
+  xlab("")+ggtitle("Soil Moisture (%) - Using the Coefficient method")+facet_grid(trait.x~location.x,scales="free_y")
+plotly::ggplotly(p)
+```
+
+
+	
+
+```{r message=FALSE, warning=FALSE, echo=FALSE,fig.height=10, fig.width=12}
+#dates_1 = c(seq(ymd('2024-07-16'),ymd('2024-07-19'),by='days'),seq(ymd('2024-07-21'),ymd('2024-07-23'),by='days'),seq(ymd('2024-07-25'),ymd('2024-07-26'),by='days'),seq(ymd('2024-07-28'),ymd('2024-07-29'),by='days'),seq(ymd('2024-08-02'),ymd('2024-08-06'),by='days'),seq(ymd('2024-08-07'),ymd('2024-08-09'),by='days'),seq(ymd('2024-08-10'),ymd('2024-08-11'),by='days'),seq(ymd('2024-08-20'),ymd('2024-08-29'),by='days'),seq(ymd('2024-09-04'),ymd('2024-09-05'),by='days'),seq(ymd('2024-09-12'),ymd('2024-09-21'),by='days'),seq(ymd('2024-09-26'),ymd('2024-10-05'),by='days'),seq(ymd('2024-10-10'),ymd('2024-10-13'),by='days'))
+
+dates_1 = c('2025-07-02','2025-07-06','2025-07-08','2025-07-11','2025-07-13','2025-07-18','2025-07-20','2025-07-25','2025-07-27','2025-08-02','2025-08-05','2025-08-13','2025-08-16','2025-08-27')
+
+dates_1 = ymd(dates_1) 
+
+
+
+
+
+sondes_data_2_gather_summary_1_plot_1_dates = filter(sondes_data_2_gather_summary_1_plot_1, dat%in% dates_1)
+
+sondes_data_2_gather_summary_1_plot_1_dates = sondes_data_2_gather_summary_1_plot_1_dates %>% mutate(first_or_last=ifelse(dat %in% ymd(c('2025-07-02','2025-07-08','2025-07-13','2025-07-20','2025-07-27','2025-08-05','2025-08-16')),"first","last"))
+
+p <- ggplot(sondes_data_2_gather_summary_1_plot_1_dates, aes(x=as.Date(dat), y=value_transformed, color=hybrid_trait,alpha=0.5)) +
+  geom_point() + 
+  xlab("")+ggtitle("Soil Temperature - Using the Coefficient method")+facet_grid(trait.x~location.x,scales="free_y")
+plotly::ggplotly(p)
+
+
+#ifelse(as.Date(date, "%d/%m/%Y") < as.Date("2001-02-02"), 1, 2)
+#data %>% filter(as.Date(date1) %within% interval(start_date, current_date) | as.Date(date2) %within% interval(current_date, end_date) | (is.na(date1) & is.na(date2)))
+
+sondes_data_2_gather_summary_1_plot_1_dates = sondes_data_2_gather_summary_1_plot_1_dates %>% mutate(date_phases = ifelse(dat >='2025-07-02' & dat <='2025-07-06', "01_phase",ifelse(dat >='2025-07-08' & dat <='2025-07-12', "02_phase",ifelse(dat >='2025-07-13' & dat <='2025-07-18', "03_phase",ifelse(dat >='2024-07-20' & dat <='2024-07-25', "04_phase",ifelse(dat >='2025-07-27' & dat <='2025-08-02', "05_phase",ifelse(dat >='2025-08-05' & dat <='2025-08-13', "06_phase",ifelse(dat >='2025-08-16' & dat <='2025-08-27', "07_phase","11_phase"))))))))
+
+#DT::datatable(sondes_data_2_gather_summary_1_plot_1_dates, filter="top")
+
+#sondes_data_2_gather_summary_1_plot_1_dates_spread = sondes_data_2_gather_summary_1_plot_1_dates %>% spread(first_or_last,value_transformed) 
+# %>%
+#  mutate(rf.diff = rf - first(rf))
+sondes_data_2_gather_summary_1_plot_1_dates_summary = sondes_data_2_gather_summary_1_plot_1_dates %>% group_by(system,trait.y,date_phases,hybrid_rowwidth) %>% mutate(delta=round(first(value_transformed)-value_transformed,4))
+
+sondes_data_2_gather_summary_1_plot_1_dates_summary_1 = filter(sondes_data_2_gather_summary_1_plot_1_dates_summary, first_or_last!="first")
+
+
+#sondes_data_2_gather_summary_1_plot_1_dates_summary_1 = filter(sondes_data_2_gather_summary_1_plot_1_dates_summary, delta>0)
+
+DT::datatable(sondes_data_2_gather_summary_1_plot_1_dates_summary_1, filter="top")
+
+
+#pdf = df %>% group_by(group) %>% mutate(cs = cumsum(sales))
+
+p <- ggplot(sondes_data_2_gather_summary_1_plot_1_dates_summary_1, aes(x=as.Date(dat), y=delta, color=system,alpha=0.5)) +
+  geom_line()+geom_point()+
+  xlab("")+ggtitle("Dynamics of delta across the season")+facet_grid(trait.x~location.x,scales="free_y")
+plotly::ggplotly(p)
+
+#calculate cumulative delta over the different phases (periods)
+sondes_data_2_gather_summary_1_plot_1_dates_summary_1 = sondes_data_2_gather_summary_1_plot_1_dates_summary_1 %>% mutate(delta = ifelse(delta <0, 0, delta))
+
+cumulative_data = sondes_data_2_gather_summary_1_plot_1_dates_summary_1 %>% group_by(location.x,trait.x,hybrid_trait) %>% mutate(cumulative_delta = cumsum(delta))
+
+p <- ggplot(cumulative_data, aes(x=as.Date(dat), y=cumulative_delta, color=system,alpha=0.5)) +
+  geom_line()+geom_point()+
+  xlab("")+ggtitle("Dynamics of cumulative delta across the season")+facet_grid(trait.x~location.x)
+plotly::ggplotly(p)
+cumulative_2 = p
+
+
+delta_data = sondes_data_2_gather_summary_1_plot_1_dates_summary_1 %>% group_by(location.x ,system,trait.x,hybrid_trait,hybrid_factor_trait,hybrid_rowwidth) %>% summarise(sum_deltas= sum(delta),mean_deltas= mean(delta))
+
+DT::datatable(delta_data, filter="top")
+
+p=ggplot(delta_data, aes(hybrid_rowwidth,sum_deltas,fill=system))+geom_bar(stat="identity", position="dodge")+facet_grid(trait.x~location.x)
+plotly::ggplotly(p)
+
+delta_data_1 = filter(delta_data, trait.x!="average_moisture")
+```
+
+
+
+## Statistical analysis - Comparison of delta sums across all soil depths between the different hybrid systems.
+
+```{r message=FALSE, warning=FALSE, echo=F}
+model_data= delta_data_1
+model_data$type = "soil_moisture_percent"
+
+traits = unique(model_data$type)
+model_data$sum_deltas = as.double(model_data$sum_deltas )
+
+#model_data = model_data %>% filter(LOCATION== "ALMUDEVAR")
+
+outlier_data = data_with_model_outlier_check_by_location(model_data,3)
+
+
+table(outlier_data$DSR_by_location_outlier_flag)
+
+ssc_data_outlier_no_outlier = filter(outlier_data,DSR_by_location_outlier_flag==FALSE )
+#table(ssc_data_outlier_no_outlier$DSR_by_location_outlier_flag)
+
+#DT::datatable(ssc_data_outlier_no_outlier, filter="top")
+
+# model_data_summary = model_data %>% group_by(LOCATION,VARIETY,type,trait,replicate) %>% summarise(value= mean(value))
+# 
+# model_data_summary_loc1 = model_data_summary %>% filter(LOCATION== "ALMUDEVAR")
+# 
+# model_data_summary_loc1_trait1 = filter(model_data_summary_loc1, type=="Hydric potential (kPa) 30 cm")
+# 
+# model = lmerTest::lmer(value ~ VARIETY + (1|replicate), data = model_data_summary_loc1_trait1)
+# 
+# lsm1 = emmeans::lsmeans(model,~VARIETY)  
+# library(multcompView)
+#   lsm1.df = multcomp::cld(lsm1,alpha=0.1,Letters=LETTERS,sort=TRUE,adjust="none")
+```
+
+
+```{r message=FALSE, warning=FALSE, echo=F,fig.width=14}
+
+
+#only SSCs
+  ssc_data=ssc_data_outlier_no_outlier
+ 
+ssc_data_1 = ssc_data
+
+
+#ssc_data_no_nas_ssc = ssc_data_high_ye%>% filter(hybrid %in% c("EW6846"))
+   library(multcompView)
+ssc_data$system = as.factor(ssc_data$system)
+
+ssc_data$trait.x  = as.factor(ssc_data$trait.x  )
+
+
+
+#STANDART 100
+
+mod_results=by_location_analysis(ssc_data) 
+lsmeans_results = as.data.frame(mod_results[1])
+anova_results = as.data.frame(mod_results[2])
+contrast_results = as.data.frame(mod_results[3])
+
+#ssc_hybrids = c("EW6846XKL1" ,"EW6015XKL1","EW6436XKL1","EW6650XKP1","EW6526XKL1","EW6846","EW6436")
+ 
+#lsmeans_results = lsmeans_results %>% mutate(hybrid_type = ifelse(hybrid_name %in% ssc_hybrids, "ssc","tall"))
+
+library(stringr)
+lsmeans_results_ps= lsmeans_results %>%
+  mutate_if(is.character, str_trim)
+lsmeans_results_ps= lsmeans_results_ps %>%
+  mutate(across(where(is.character), str_remove_all, pattern = fixed(" ")))
+ 
+lsmeans_results_ps$Group = as.factor(lsmeans_results_ps$.group)
+lsmeans_results_ps= lsmeans_results_ps %>% mutate_if(is.numeric, round, 1)
+pd <- position_dodge(0.1)
+plot_lsmeans=ggplot(lsmeans_results_ps,aes(reorder( system,-lsmean),lsmean, fill=as.factor(system)))+geom_bar(stat="identity",position="dodge")+xlab("Product")+ylab(" LSMeans")+
+  #theme_classic() + 
+  theme( axis.text = element_text( size = 10 ),
+         axis.text.x = element_text( size = 10 ),
+         axis.title = element_text( size = 10, face = "bold" ),strip.text = element_text(size = 13, face = 'bold') ) +
+     geom_text(aes(label=lsmean,y = lsmean, group = system), position = position_dodge(width = 0.8), vjust = -0.9, 
+            size = 3)+ theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))+
+  geom_errorbar(aes(ymin=lsmean-SE, ymax=lsmean+SE), width=.2,
+                position=position_dodge(.9))+xlab("Factor")+ylab("lsmeans - Delta sum")+geom_text(aes(label = Group, y = -5, group = system), vjust = -0.9, 
+            size = 3, position = position_dodge(width = 0.8))+xlab("Hybrid")+ggtitle("COUSSAN - Comparison of Delta sum across all soil depths")
+plot_lsmeans
+
+plot_lsmeans_2 = plot_lsmeans
+
+
+#DT::datatable(anova_results)
+  #DT::datatable(lsmeans_results)
+  
+#plot_lsmeans_ssc_only(lsmeans_results)
+
+contrast_results = contrast_results%>% separate(contrast, into=c("SSC system 1","SSC system 2"), sep=" - ",remove=F)
+
+#DT::datatable(lsmeans_results_ps, filter="top")
+
+#DT::datatable(contrast_results, filter="top")
+
+```
+
+
+## Statistical analysis - Comparison of delta sums across 10 and 20 cm depths between the different hybrid systems.
+
+```{r message=FALSE, warning=FALSE, echo=F}
+model_data= delta_data_1
+model_data = filter(model_data,trait.x %in% c("soil_mois_1_10","soil_mois_2_20") )
+model_data$type = "soil_moisture_percent"
+ 
+traits = unique(model_data$type)
+model_data$sum_deltas = as.double(model_data$sum_deltas )
+
+#model_data = model_data %>% filter(LOCATION== "ALMUDEVAR")
+
+outlier_data = data_with_model_outlier_check_by_location(model_data,3)
+
+
+table(outlier_data$DSR_by_location_outlier_flag)
+
+ssc_data_outlier_no_outlier = filter(outlier_data,DSR_by_location_outlier_flag==FALSE )
+#table(ssc_data_outlier_no_outlier$DSR_by_location_outlier_flag)
+
+#DT::datatable(ssc_data_outlier_no_outlier, filter="top")
+
+# model_data_summary = model_data %>% group_by(LOCATION,VARIETY,type,trait,replicate) %>% summarise(value= mean(value))
+# 
+# model_data_summary_loc1 = model_data_summary %>% filter(LOCATION== "ALMUDEVAR")
+# 
+# model_data_summary_loc1_trait1 = filter(model_data_summary_loc1, type=="Hydric potential (kPa) 30 cm")
+# 
+# model = lmerTest::lmer(value ~ VARIETY + (1|replicate), data = model_data_summary_loc1_trait1)
+# 
+# lsm1 = emmeans::lsmeans(model,~VARIETY)  
+# library(multcompView)
+#   lsm1.df = multcomp::cld(lsm1,alpha=0.1,Letters=LETTERS,sort=TRUE,adjust="none")
+```
+
+
+```{r message=FALSE, warning=FALSE, echo=F,fig.width=14}
+
+
+#only SSCs
+  ssc_data=ssc_data_outlier_no_outlier
+ 
+ssc_data_1 = ssc_data
+
+
+#ssc_data_no_nas_ssc = ssc_data_high_ye%>% filter(hybrid %in% c("EW6846"))
+   library(multcompView)
+ssc_data$system = as.factor(ssc_data$system)
+
+ssc_data$trait.x  = as.factor(ssc_data$trait.x  )
+
+
+
+#STANDART 100
+
+mod_results=by_location_analysis(ssc_data) 
+lsmeans_results = as.data.frame(mod_results[1])
+anova_results = as.data.frame(mod_results[2])
+contrast_results = as.data.frame(mod_results[3])
+
+#ssc_hybrids = c("EW6846XKL1" ,"EW6015XKL1","EW6436XKL1","EW6650XKP1","EW6526XKL1","EW6846","EW6436")
+ 
+#lsmeans_results = lsmeans_results %>% mutate(hybrid_type = ifelse(hybrid_name %in% ssc_hybrids, "ssc","tall"))
+
+library(stringr)
+lsmeans_results_ps= lsmeans_results %>%
+  mutate_if(is.character, str_trim)
+lsmeans_results_ps= lsmeans_results_ps %>%
+  mutate(across(where(is.character), str_remove_all, pattern = fixed(" ")))
+ 
+lsmeans_results_ps$Group = as.factor(lsmeans_results_ps$.group)
+lsmeans_results_ps= lsmeans_results_ps %>% mutate_if(is.numeric, round, 1)
+pd <- position_dodge(0.1)
+plot_lsmeans=ggplot(lsmeans_results_ps,aes(reorder( system,-lsmean),lsmean, fill=as.factor(system)))+geom_bar(stat="identity",position="dodge")+xlab("Product")+ylab(" LSMeans")+
+  #theme_classic() + 
+  theme( axis.text = element_text( size = 10 ),
+         axis.text.x = element_text( size = 10 ),
+         axis.title = element_text( size = 10, face = "bold" ),strip.text = element_text(size = 13, face = 'bold') ) +
+     geom_text(aes(label=lsmean,y = lsmean, group = system), position = position_dodge(width = 0.8), vjust = -0.9, 
+            size = 3)+ theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))+
+  geom_errorbar(aes(ymin=lsmean-SE, ymax=lsmean+SE), width=.2,
+                position=position_dodge(.9))+xlab("Factor")+ylab("lsmeans - Delta sum")+geom_text(aes(label = Group, y = -5, group = system), vjust = -0.9, 
+            size = 3, position = position_dodge(width = 0.8))+xlab("Hybrid")+ggtitle("COUSSAN (SSC4) - Comparison of Delta sum across 10 and 20 cm depth")
+plot_lsmeans
+
+plot_lsmeans_10_2 = plot_lsmeans
+
+
+#DT::datatable(anova_results)
+  #DT::datatable(lsmeans_results)
+  
+#plot_lsmeans_ssc_only(lsmeans_results)
+
+contrast_results = contrast_results%>% separate(contrast, into=c("SSC system 1","SSC system 2"), sep=" - ",remove=F)
+
+
+
+
+
+#DT::datatable(lsmeans_results_ps, filter="top")
+
+#DT::datatable(contrast_results, filter="top")
+
+```
+
+
+# Location BOUMOURT (SSC5)
+
+
+
+	
+	
+```{r message=FALSE, warning=FALSE, echo=FALSE,fig.height=15, fig.width=15}
+#sondes_data_2_gather_summary_1_plot
+
+
+
+sondes_data_2_gather_summary_1_plot_1 = filter(sondes_data_2_gather_summary_1_plot, location.x == "BOUMOURT")
+
+sondes_data_2_gather_summary_1_plot_1 = sondes_data_2_gather_summary_1_plot_1 %>% mutate(hybrid_rowwidth= ifelse(system=="DKC5812 Densité tradi - 95 000 plt/ha - 40 cm","DKC5812_40cm",ifelse(system=="DKC5812 FARMER SYSTEM - 85 000 plt/ha - 80 cm","DKC5812_80cm",ifelse(system=="EZ5936XKPZ - Densité 2: 120 000 plt/ha - 40 cm","EZ5936XKPZ_40cm","EZ5936XKPZ_80cm"))))
+
+unique(sondes_data_2_gather_summary_1_plot_1$trait.x)
+
+sondes_data_2_gather_summary_1_plot_1 = sondes_data_2_gather_summary_1_plot_1 %>% unite(hybrid_trait,system, sep="__", remove=F)
+
+p <- ggplot(sondes_data_2_gather_summary_1_plot_1, aes(x=as.Date(dat), y=value_transformed, color=hybrid_trait,alpha=0.5)) +
+  geom_line() + 
+  xlab("")+ggtitle("Soil Moisture (%) - Using the Coefficient method")+facet_grid(trait.x~location.x,scales="free_y")
+plotly::ggplotly(p)
+```
+
+from up	to
+1	July - 07	July - 16
+2	July - 17	July - 22
+3	July - 23	July - 31
+4	August - 01	August - 09
+5	August - 10	August - 19
+6	August - 21	August - 25
+7	August - 31	Sept - 07
+8	Sept - 08	Sept - 19
+	
+
+```{r message=FALSE, warning=FALSE, echo=FALSE,fig.height=10, fig.width=12}
+#dates_1 = c(seq(ymd('2024-07-16'),ymd('2024-07-19'),by='days'),seq(ymd('2024-07-21'),ymd('2024-07-23'),by='days'),seq(ymd('2024-07-25'),ymd('2024-07-26'),by='days'),seq(ymd('2024-07-28'),ymd('2024-07-29'),by='days'),seq(ymd('2024-08-02'),ymd('2024-08-06'),by='days'),seq(ymd('2024-08-07'),ymd('2024-08-09'),by='days'),seq(ymd('2024-08-10'),ymd('2024-08-11'),by='days'),seq(ymd('2024-08-20'),ymd('2024-08-29'),by='days'),seq(ymd('2024-09-04'),ymd('2024-09-05'),by='days'),seq(ymd('2024-09-12'),ymd('2024-09-21'),by='days'),seq(ymd('2024-09-26'),ymd('2024-10-05'),by='days'),seq(ymd('2024-10-10'),ymd('2024-10-13'),by='days'))
+
+dates_1 = c('2025-07-05','2025-07-16','2025-07-18','2025-07-22','2025-07-24','2025-07-31','2025-08-02','2025-08-09','2025-08-10','2025-08-19','2025-08-22','2025-08-27','2025-09-01','2025-09-07','2025-09-09','2025-09-20')
+
+dates_1 = ymd(dates_1) 
+
+
+
+
+
+sondes_data_2_gather_summary_1_plot_1_dates = filter(sondes_data_2_gather_summary_1_plot_1, dat%in% dates_1)
+
+sondes_data_2_gather_summary_1_plot_1_dates = sondes_data_2_gather_summary_1_plot_1_dates %>% mutate(first_or_last=ifelse(dat %in% ymd(c('2025-07-05','2025-07-18','2025-07-24','2025-08-02','2025-08-10','2025-08-22','2025-09-01','2025-09-09')),"first","last"))
+
+p <- ggplot(sondes_data_2_gather_summary_1_plot_1_dates, aes(x=as.Date(dat), y=value_transformed, color=hybrid_trait,alpha=0.5)) +
+  geom_point() + 
+  xlab("")+ggtitle("Soil Temperature - Using the Coefficient method")+facet_grid(trait.x~location.x,scales="free_y")
+plotly::ggplotly(p)
+
+
+#ifelse(as.Date(date, "%d/%m/%Y") < as.Date("2001-02-02"), 1, 2)
+#data %>% filter(as.Date(date1) %within% interval(start_date, current_date) | as.Date(date2) %within% interval(current_date, end_date) | (is.na(date1) & is.na(date2)))
+
+sondes_data_2_gather_summary_1_plot_1_dates = sondes_data_2_gather_summary_1_plot_1_dates %>% mutate(date_phases = ifelse(dat >='2025-07-05' & dat <='2025-07-16', "01_phase",ifelse(dat >='2025-07-18' & dat <='2025-07-22', "02_phase",ifelse(dat >='2025-07-24' & dat <='2025-07-31', "03_phase",ifelse(dat >='2024-08-02' & dat <='2024-08-09', "04_phase",ifelse(dat >='2025-08-10' & dat <='2025-08-19', "05_phase",ifelse(dat >='2025-08-22' & dat <='2025-08-27', "06_phase",ifelse(dat >='2025-09-01' & dat <='2025-09-07', "07_phase",ifelse(dat >='2025-09-09' & dat <='2025-09-20', "08_phase","09_phase")))))))))
+
+#DT::datatable(sondes_data_2_gather_summary_1_plot_1_dates, filter="top")
+
+#sondes_data_2_gather_summary_1_plot_1_dates_spread = sondes_data_2_gather_summary_1_plot_1_dates %>% spread(first_or_last,value_transformed) 
+# %>%
+#  mutate(rf.diff = rf - first(rf))
+sondes_data_2_gather_summary_1_plot_1_dates_summary = sondes_data_2_gather_summary_1_plot_1_dates %>% group_by(system,trait.y,date_phases,hybrid_rowwidth) %>% mutate(delta=round(first(value_transformed)-value_transformed,4))
+
+sondes_data_2_gather_summary_1_plot_1_dates_summary_1 = filter(sondes_data_2_gather_summary_1_plot_1_dates_summary, first_or_last!="first")
+
+
+#sondes_data_2_gather_summary_1_plot_1_dates_summary_1 = filter(sondes_data_2_gather_summary_1_plot_1_dates_summary, delta>0)
+
+DT::datatable(sondes_data_2_gather_summary_1_plot_1_dates_summary_1, filter="top")
+
+
+#pdf = df %>% group_by(group) %>% mutate(cs = cumsum(sales))
+
+p <- ggplot(sondes_data_2_gather_summary_1_plot_1_dates_summary_1, aes(x=as.Date(dat), y=delta, color=system,alpha=0.5)) +
+  geom_line()+geom_point()+
+  xlab("")+ggtitle("Dynamics of delta across the season")+facet_grid(trait.x~location.x,scales="free_y")
+plotly::ggplotly(p)
+
+#calculate cumulative delta over the different phases (periods)
+sondes_data_2_gather_summary_1_plot_1_dates_summary_1 = sondes_data_2_gather_summary_1_plot_1_dates_summary_1 %>% mutate(delta = ifelse(delta <0, 0, delta))
+
+cumulative_data = sondes_data_2_gather_summary_1_plot_1_dates_summary_1 %>% group_by(location.x,trait.x,hybrid_trait) %>% mutate(cumulative_delta = cumsum(delta))
+
+p <- ggplot(cumulative_data, aes(x=as.Date(dat), y=cumulative_delta, color=system,alpha=0.5)) +
+  geom_line()+geom_point()+
+  xlab("")+ggtitle("Dynamics of cumulative delta across the season")+facet_grid(trait.x~location.x)
+plotly::ggplotly(p)
+
+cumulative_3 = p
+
+delta_data = sondes_data_2_gather_summary_1_plot_1_dates_summary_1 %>% group_by(location.x ,system,trait.x,hybrid_trait,hybrid_factor_trait,hybrid_rowwidth) %>% summarise(sum_deltas= sum(delta),mean_deltas= mean(delta))
+
+DT::datatable(delta_data, filter="top")
+
+p=ggplot(delta_data, aes(hybrid_rowwidth,sum_deltas,fill=system))+geom_bar(stat="identity", position="dodge")+facet_grid(trait.x~location.x)
+plotly::ggplotly(p)
+
+delta_data_1 = filter(delta_data, trait.x!="average_moisture")
+```
+
+
+
+## Statistical analysis - Comparison of delta sums across all soil depths between the different hybrid systems.
+
+```{r message=FALSE, warning=FALSE, echo=F}
+model_data= delta_data_1
+model_data$type = "soil_moisture_percent"
+
+traits = unique(model_data$type)
+model_data$sum_deltas = as.double(model_data$sum_deltas )
+
+#model_data = model_data %>% filter(LOCATION== "ALMUDEVAR")
+
+outlier_data = data_with_model_outlier_check_by_location(model_data,3)
+
+
+table(outlier_data$DSR_by_location_outlier_flag)
+
+ssc_data_outlier_no_outlier = filter(outlier_data,DSR_by_location_outlier_flag==FALSE )
+#table(ssc_data_outlier_no_outlier$DSR_by_location_outlier_flag)
+
+#DT::datatable(ssc_data_outlier_no_outlier, filter="top")
+
+# model_data_summary = model_data %>% group_by(LOCATION,VARIETY,type,trait,replicate) %>% summarise(value= mean(value))
+# 
+# model_data_summary_loc1 = model_data_summary %>% filter(LOCATION== "ALMUDEVAR")
+# 
+# model_data_summary_loc1_trait1 = filter(model_data_summary_loc1, type=="Hydric potential (kPa) 30 cm")
+# 
+# model = lmerTest::lmer(value ~ VARIETY + (1|replicate), data = model_data_summary_loc1_trait1)
+# 
+# lsm1 = emmeans::lsmeans(model,~VARIETY)  
+# library(multcompView)
+#   lsm1.df = multcomp::cld(lsm1,alpha=0.1,Letters=LETTERS,sort=TRUE,adjust="none")
+```
+
+
+```{r message=FALSE, warning=FALSE, echo=F,fig.width=14}
+
+
+#only SSCs
+  ssc_data=ssc_data_outlier_no_outlier
+ 
+ssc_data_1 = ssc_data
+
+
+#ssc_data_no_nas_ssc = ssc_data_high_ye%>% filter(hybrid %in% c("EW6846"))
+   library(multcompView)
+ssc_data$system = as.factor(ssc_data$system)
+
+ssc_data$trait.x  = as.factor(ssc_data$trait.x  )
+
+
+
+#STANDART 100
+
+mod_results=by_location_analysis(ssc_data) 
+lsmeans_results = as.data.frame(mod_results[1])
+anova_results = as.data.frame(mod_results[2])
+contrast_results = as.data.frame(mod_results[3])
+
+#ssc_hybrids = c("EW6846XKL1" ,"EW6015XKL1","EW6436XKL1","EW6650XKP1","EW6526XKL1","EW6846","EW6436")
+ 
+#lsmeans_results = lsmeans_results %>% mutate(hybrid_type = ifelse(hybrid_name %in% ssc_hybrids, "ssc","tall"))
+
+library(stringr)
+lsmeans_results_ps= lsmeans_results %>%
+  mutate_if(is.character, str_trim)
+lsmeans_results_ps= lsmeans_results_ps %>%
+  mutate(across(where(is.character), str_remove_all, pattern = fixed(" ")))
+ 
+lsmeans_results_ps$Group = as.factor(lsmeans_results_ps$.group)
+lsmeans_results_ps= lsmeans_results_ps %>% mutate_if(is.numeric, round, 1)
+pd <- position_dodge(0.1)
+plot_lsmeans=ggplot(lsmeans_results_ps,aes(reorder( system,-lsmean),lsmean, fill=as.factor(system)))+geom_bar(stat="identity",position="dodge")+xlab("Product")+ylab(" LSMeans")+
+  #theme_classic() + 
+  theme( axis.text = element_text( size = 10 ),
+         axis.text.x = element_text( size = 10 ),
+         axis.title = element_text( size = 10, face = "bold" ),strip.text = element_text(size = 13, face = 'bold') ) +
+     geom_text(aes(label=lsmean,y = lsmean, group = system), position = position_dodge(width = 0.8), vjust = -0.9, 
+            size = 3)+ theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))+
+  geom_errorbar(aes(ymin=lsmean-SE, ymax=lsmean+SE), width=.2,
+                position=position_dodge(.9))+xlab("Factor")+ylab("lsmeans - Delta sum")+geom_text(aes(label = Group, y = -5, group = system), vjust = -0.9, 
+            size = 3, position = position_dodge(width = 0.8))+xlab("Hybrid")+ggtitle("BOUMOURT - Comparison of Delta sum across all soil depths")
+plot_lsmeans
+
+plot_lsmeans_3 = plot_lsmeans
+
+
+#DT::datatable(anova_results)
+  #DT::datatable(lsmeans_results)
+  
+#plot_lsmeans_ssc_only(lsmeans_results)
+
+contrast_results = contrast_results%>% separate(contrast, into=c("SSC system 1","SSC system 2"), sep=" - ",remove=F)
+
+#DT::datatable(lsmeans_results_ps, filter="top")
+
+#DT::datatable(contrast_results, filter="top")
+
+```
+
+## Statistical analysis - Comparison of delta sums across 10 and 20 cm depths between the different hybrid systems.
+
+```{r message=FALSE, warning=FALSE, echo=F}
+model_data= delta_data_1
+model_data = filter(model_data,trait.x %in% c("soil_mois_1_10","soil_mois_2_20") )
+model_data$type = "soil_moisture_percent"
+ 
+traits = unique(model_data$type)
+model_data$sum_deltas = as.double(model_data$sum_deltas )
+
+#model_data = model_data %>% filter(LOCATION== "ALMUDEVAR")
+
+outlier_data = data_with_model_outlier_check_by_location(model_data,3)
+
+
+table(outlier_data$DSR_by_location_outlier_flag)
+
+ssc_data_outlier_no_outlier = filter(outlier_data,DSR_by_location_outlier_flag==FALSE )
+#table(ssc_data_outlier_no_outlier$DSR_by_location_outlier_flag)
+
+#DT::datatable(ssc_data_outlier_no_outlier, filter="top")
+
+# model_data_summary = model_data %>% group_by(LOCATION,VARIETY,type,trait,replicate) %>% summarise(value= mean(value))
+# 
+# model_data_summary_loc1 = model_data_summary %>% filter(LOCATION== "ALMUDEVAR")
+# 
+# model_data_summary_loc1_trait1 = filter(model_data_summary_loc1, type=="Hydric potential (kPa) 30 cm")
+# 
+# model = lmerTest::lmer(value ~ VARIETY + (1|replicate), data = model_data_summary_loc1_trait1)
+# 
+# lsm1 = emmeans::lsmeans(model,~VARIETY)  
+# library(multcompView)
+#   lsm1.df = multcomp::cld(lsm1,alpha=0.1,Letters=LETTERS,sort=TRUE,adjust="none")
+```
+
+
+```{r message=FALSE, warning=FALSE, echo=F,fig.width=14}
+
+
+#only SSCs
+  ssc_data=ssc_data_outlier_no_outlier
+ 
+ssc_data_1 = ssc_data
+
+
+#ssc_data_no_nas_ssc = ssc_data_high_ye%>% filter(hybrid %in% c("EW6846"))
+   library(multcompView)
+ssc_data$system = as.factor(ssc_data$system)
+
+ssc_data$trait.x  = as.factor(ssc_data$trait.x  )
+
+
+
+#STANDART 100
+
+mod_results=by_location_analysis(ssc_data) 
+lsmeans_results = as.data.frame(mod_results[1])
+anova_results = as.data.frame(mod_results[2])
+contrast_results = as.data.frame(mod_results[3])
+
+#ssc_hybrids = c("EW6846XKL1" ,"EW6015XKL1","EW6436XKL1","EW6650XKP1","EW6526XKL1","EW6846","EW6436")
+ 
+#lsmeans_results = lsmeans_results %>% mutate(hybrid_type = ifelse(hybrid_name %in% ssc_hybrids, "ssc","tall"))
+
+library(stringr)
+lsmeans_results_ps= lsmeans_results %>%
+  mutate_if(is.character, str_trim)
+lsmeans_results_ps= lsmeans_results_ps %>%
+  mutate(across(where(is.character), str_remove_all, pattern = fixed(" ")))
+ 
+lsmeans_results_ps$Group = as.factor(lsmeans_results_ps$.group)
+lsmeans_results_ps= lsmeans_results_ps %>% mutate_if(is.numeric, round, 1)
+pd <- position_dodge(0.1)
+plot_lsmeans=ggplot(lsmeans_results_ps,aes(reorder( system,-lsmean),lsmean, fill=as.factor(system)))+geom_bar(stat="identity",position="dodge")+xlab("Product")+ylab(" LSMeans")+
+  #theme_classic() + 
+  theme( axis.text = element_text( size = 10 ),
+         axis.text.x = element_text( size = 10 ),
+         axis.title = element_text( size = 10, face = "bold" ),strip.text = element_text(size = 13, face = 'bold') ) +
+     geom_text(aes(label=lsmean,y = lsmean, group = system), position = position_dodge(width = 0.8), vjust = -0.9, 
+            size = 3)+ theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))+
+  geom_errorbar(aes(ymin=lsmean-SE, ymax=lsmean+SE), width=.2,
+                position=position_dodge(.9))+xlab("Factor")+ylab("lsmeans - Delta sum")+geom_text(aes(label = Group, y = -5, group = system), vjust = -0.9, 
+            size = 3, position = position_dodge(width = 0.8))+xlab("Hybrid")+ggtitle("BOUMOURT (SSC5) - Comparison of Delta sum across 10 and 20 cm depth")
+plot_lsmeans
+
+plot_lsmeans_10_3 = plot_lsmeans
+
+
+#DT::datatable(anova_results)
+  #DT::datatable(lsmeans_results)
+  
+#plot_lsmeans_ssc_only(lsmeans_results)
+
+contrast_results = contrast_results%>% separate(contrast, into=c("SSC system 1","SSC system 2"), sep=" - ",remove=F)
+
+
+
+
+
+#DT::datatable(lsmeans_results_ps, filter="top")
+
+#DT::datatable(contrast_results, filter="top")
+
+```
+
+
+# Location POURSIUGUES (SSC6 100%)
+
+
+
+	
+	
+```{r message=FALSE, warning=FALSE, echo=FALSE,fig.height=15, fig.width=15}
+#sondes_data_2_gather_summary_1_plot
+
+
+
+sondes_data_2_gather_summary_1_plot_1 = filter(sondes_data_2_gather_summary_1_plot, location.x == "POURSIUGUES (SSC6 100%)")
+
+sondes_data_2_gather_summary_1_plot_1 = sondes_data_2_gather_summary_1_plot_1 %>% mutate(hybrid_rowwidth= ifelse(system=="DKC5812 Densité tradi - 95 000 plt/ha - 40 cm","DKC5812_40cm",ifelse(system=="DKC5812 FARMER SYSTEM - 85 000 plt/ha - 80 cm","DKC5812_80cm",ifelse(system=="EZ5936XKPZ - Densité 2: 120 000 plt/ha - 40 cm","EZ5936XKPZ_40cm","EZ5936XKPZ_80cm"))))
+
+unique(sondes_data_2_gather_summary_1_plot_1$trait.x)
+
+sondes_data_2_gather_summary_1_plot_1 = sondes_data_2_gather_summary_1_plot_1 %>% unite(hybrid_trait,system, sep="__", remove=F)
+
+p <- ggplot(sondes_data_2_gather_summary_1_plot_1, aes(x=as.Date(dat), y=value_transformed, color=hybrid_trait,alpha=0.5)) +
+  geom_line() + 
+  xlab("")+ggtitle("Soil Moisture (%) - Using the Coefficient method")+facet_grid(trait.x~location.x,scales="free_y")
+plotly::ggplotly(p)
+```
+
+July - 03	July - 06
+July - 07	July - 14
+July - 15	July - 22
+July - 23	August - 02
+August - 03	August - 15
+August - 16	August - 19
+August - 20	August - 27
+August - 28	August - 30
+August - 31	Sept - 07
+Sept - 08	Sept - 17
+
+	
+
+```{r message=FALSE, warning=FALSE, echo=FALSE,fig.height=10, fig.width=12}
+#dates_1 = c(seq(ymd('2024-07-16'),ymd('2024-07-19'),by='days'),seq(ymd('2024-07-21'),ymd('2024-07-23'),by='days'),seq(ymd('2024-07-25'),ymd('2024-07-26'),by='days'),seq(ymd('2024-07-28'),ymd('2024-07-29'),by='days'),seq(ymd('2024-08-02'),ymd('2024-08-06'),by='days'),seq(ymd('2024-08-07'),ymd('2024-08-09'),by='days'),seq(ymd('2024-08-10'),ymd('2024-08-11'),by='days'),seq(ymd('2024-08-20'),ymd('2024-08-29'),by='days'),seq(ymd('2024-09-04'),ymd('2024-09-05'),by='days'),seq(ymd('2024-09-12'),ymd('2024-09-21'),by='days'),seq(ymd('2024-09-26'),ymd('2024-10-05'),by='days'),seq(ymd('2024-10-10'),ymd('2024-10-13'),by='days'))
+
+dates_1 = c('2025-07-03','2025-07-14','2025-07-16','2025-07-22','2025-07-24','2025-08-02','2025-08-04','2025-08-15','2025-08-21','2025-08-27','2025-09-01','2025-09-08','2025-09-09','2025-09-17')
+
+dates_1 = ymd(dates_1) 
+
+
+
+
+
+sondes_data_2_gather_summary_1_plot_1_dates = filter(sondes_data_2_gather_summary_1_plot_1, dat%in% dates_1)
+
+sondes_data_2_gather_summary_1_plot_1_dates = sondes_data_2_gather_summary_1_plot_1_dates %>% mutate(first_or_last=ifelse(dat %in% ymd(c('2025-07-03','2025-07-16','2025-07-24','2025-08-04','2025-08-21','2025-09-01','2025-09-17')),"first","last"))
+
+p <- ggplot(sondes_data_2_gather_summary_1_plot_1_dates, aes(x=as.Date(dat), y=value_transformed, color=hybrid_trait,alpha=0.5)) +
+  geom_point() + 
+  xlab("")+ggtitle("Soil Temperature - Using the Coefficient method")+facet_grid(trait.x~location.x,scales="free_y")
+plotly::ggplotly(p)
+
+
+#ifelse(as.Date(date, "%d/%m/%Y") < as.Date("2001-02-02"), 1, 2)
+#data %>% filter(as.Date(date1) %within% interval(start_date, current_date) | as.Date(date2) %within% interval(current_date, end_date) | (is.na(date1) & is.na(date2)))
+
+sondes_data_2_gather_summary_1_plot_1_dates = sondes_data_2_gather_summary_1_plot_1_dates %>% mutate(date_phases = ifelse(dat >='2025-07-03' & dat <='2025-07-14', "01_phase",ifelse(dat >='2025-07-16' & dat <='2025-07-22', "02_phase",ifelse(dat >='2025-07-24' & dat <='2025-08-02', "03_phase",ifelse(dat >='2024-08-04' & dat <='2024-08-15', "04_phase",ifelse(dat >='2025-08-21' & dat <='2025-08-27', "05_phase",ifelse(dat >='2025-09-01' & dat <='2025-09-08', "06_phase",ifelse(dat >='2025-09-09' & dat <='2025-09-17', "07_phase","11_phase"))))))))
+
+#DT::datatable(sondes_data_2_gather_summary_1_plot_1_dates, filter="top")
+
+#sondes_data_2_gather_summary_1_plot_1_dates_spread = sondes_data_2_gather_summary_1_plot_1_dates %>% spread(first_or_last,value_transformed) 
+# %>%
+#  mutate(rf.diff = rf - first(rf))
+sondes_data_2_gather_summary_1_plot_1_dates_summary = sondes_data_2_gather_summary_1_plot_1_dates %>% group_by(system,trait.y,date_phases,hybrid_rowwidth) %>% mutate(delta=round(first(value_transformed)-value_transformed,4))
+
+sondes_data_2_gather_summary_1_plot_1_dates_summary_1 = filter(sondes_data_2_gather_summary_1_plot_1_dates_summary, first_or_last!="first")
+
+
+#sondes_data_2_gather_summary_1_plot_1_dates_summary_1 = filter(sondes_data_2_gather_summary_1_plot_1_dates_summary, delta>0)
+
+DT::datatable(sondes_data_2_gather_summary_1_plot_1_dates_summary_1, filter="top")
+
+
+#pdf = df %>% group_by(group) %>% mutate(cs = cumsum(sales))
+
+p <- ggplot(sondes_data_2_gather_summary_1_plot_1_dates_summary_1, aes(x=as.Date(dat), y=delta, color=system,alpha=0.5)) +
+  geom_line()+geom_point()+
+  xlab("")+ggtitle("Dynamics of delta across the season")+facet_grid(trait.x~location.x,scales="free_y")
+plotly::ggplotly(p)
+
+#calculate cumulative delta over the different phases (periods)
+sondes_data_2_gather_summary_1_plot_1_dates_summary_1 = sondes_data_2_gather_summary_1_plot_1_dates_summary_1 %>% mutate(delta = ifelse(delta <0, 0, delta))
+
+cumulative_data = sondes_data_2_gather_summary_1_plot_1_dates_summary_1 %>% group_by(location.x,trait.x,hybrid_trait) %>% mutate(cumulative_delta = cumsum(delta))
+
+p <- ggplot(cumulative_data, aes(x=as.Date(dat), y=cumulative_delta, color=system,alpha=0.5)) +
+  geom_line()+geom_point()+
+  xlab("")+ggtitle("Dynamics of cumulative delta across the season")+facet_grid(trait.x~location.x)
+plotly::ggplotly(p)
+
+cumulative_4 = p
+
+
+
+delta_data = sondes_data_2_gather_summary_1_plot_1_dates_summary_1 %>% group_by(location.x ,system,trait.x,hybrid_trait,hybrid_factor_trait,hybrid_rowwidth) %>% summarise(sum_deltas= sum(delta),mean_deltas= mean(delta))
+
+DT::datatable(delta_data, filter="top")
+
+p=ggplot(delta_data, aes(hybrid_rowwidth,sum_deltas,fill=system))+geom_bar(stat="identity", position="dodge")+facet_grid(trait.x~location.x)
+plotly::ggplotly(p)
+
+delta_data_1 = filter(delta_data, trait.x!="average_moisture")
+```
+
+
+
+## Statistical analysis - Comparison of delta sums across all soil depths between the different hybrid systems.
+
+```{r message=FALSE, warning=FALSE, echo=F}
+model_data= delta_data_1
+model_data$type = "soil_moisture_percent"
+
+traits = unique(model_data$type)
+model_data$sum_deltas = as.double(model_data$sum_deltas )
+
+#model_data = model_data %>% filter(LOCATION== "ALMUDEVAR")
+
+outlier_data = data_with_model_outlier_check_by_location(model_data,3)
+
+
+table(outlier_data$DSR_by_location_outlier_flag)
+
+ssc_data_outlier_no_outlier = filter(outlier_data,DSR_by_location_outlier_flag==FALSE )
+#table(ssc_data_outlier_no_outlier$DSR_by_location_outlier_flag)
+
+#DT::datatable(ssc_data_outlier_no_outlier, filter="top")
+
+# model_data_summary = model_data %>% group_by(LOCATION,VARIETY,type,trait,replicate) %>% summarise(value= mean(value))
+# 
+# model_data_summary_loc1 = model_data_summary %>% filter(LOCATION== "ALMUDEVAR")
+# 
+# model_data_summary_loc1_trait1 = filter(model_data_summary_loc1, type=="Hydric potential (kPa) 30 cm")
+# 
+# model = lmerTest::lmer(value ~ VARIETY + (1|replicate), data = model_data_summary_loc1_trait1)
+# 
+# lsm1 = emmeans::lsmeans(model,~VARIETY)  
+# library(multcompView)
+#   lsm1.df = multcomp::cld(lsm1,alpha=0.1,Letters=LETTERS,sort=TRUE,adjust="none")
+```
+
+
+```{r message=FALSE, warning=FALSE, echo=F,fig.width=14}
+
+
+#only SSCs
+  ssc_data=ssc_data_outlier_no_outlier
+ 
+ssc_data_1 = ssc_data
+
+
+#ssc_data_no_nas_ssc = ssc_data_high_ye%>% filter(hybrid %in% c("EW6846"))
+   library(multcompView)
+ssc_data$system = as.factor(ssc_data$system)
+
+ssc_data$trait.x  = as.factor(ssc_data$trait.x  )
+
+
+
+#STANDART 100
+
+mod_results=by_location_analysis(ssc_data) 
+lsmeans_results = as.data.frame(mod_results[1])
+anova_results = as.data.frame(mod_results[2])
+contrast_results = as.data.frame(mod_results[3])
+
+#ssc_hybrids = c("EW6846XKL1" ,"EW6015XKL1","EW6436XKL1","EW6650XKP1","EW6526XKL1","EW6846","EW6436")
+ 
+#lsmeans_results = lsmeans_results %>% mutate(hybrid_type = ifelse(hybrid_name %in% ssc_hybrids, "ssc","tall"))
+
+library(stringr)
+lsmeans_results_ps= lsmeans_results %>%
+  mutate_if(is.character, str_trim)
+lsmeans_results_ps= lsmeans_results_ps %>%
+  mutate(across(where(is.character), str_remove_all, pattern = fixed(" ")))
+ 
+lsmeans_results_ps$Group = as.factor(lsmeans_results_ps$.group)
+lsmeans_results_ps= lsmeans_results_ps %>% mutate_if(is.numeric, round, 1)
+pd <- position_dodge(0.1)
+plot_lsmeans=ggplot(lsmeans_results_ps,aes(reorder( system,-lsmean),lsmean, fill=as.factor(system)))+geom_bar(stat="identity",position="dodge")+xlab("Product")+ylab(" LSMeans")+
+  #theme_classic() + 
+  theme( axis.text = element_text( size = 10 ),
+         axis.text.x = element_text( size = 10 ),
+         axis.title = element_text( size = 10, face = "bold" ),strip.text = element_text(size = 13, face = 'bold') ) +
+     geom_text(aes(label=lsmean,y = lsmean, group = system), position = position_dodge(width = 0.8), vjust = -0.9, 
+            size = 3)+ theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))+
+  geom_errorbar(aes(ymin=lsmean-SE, ymax=lsmean+SE), width=.2,
+                position=position_dodge(.9))+xlab("Factor")+ylab("lsmeans - Delta sum")+geom_text(aes(label = Group, y = -5, group = system), vjust = -0.9, 
+            size = 3, position = position_dodge(width = 0.8))+xlab("Hybrid")+ggtitle("POURSIUGUES (SSC6 100%) - Comparison of Delta sum across all soil depths")
+plot_lsmeans
+
+plot_lsmeans_4 = plot_lsmeans
+
+
+#DT::datatable(anova_results)
+  #DT::datatable(lsmeans_results)
+  
+#plot_lsmeans_ssc_only(lsmeans_results)
+
+contrast_results = contrast_results%>% separate(contrast, into=c("SSC system 1","SSC system 2"), sep=" - ",remove=F)
+
+#DT::datatable(lsmeans_results_ps, filter="top")
+
+#DT::datatable(contrast_results, filter="top")
+
+```
+
+
+## Statistical analysis - Comparison of delta sums across 10 and 20 cm depths between the different hybrid systems.
+
+```{r message=FALSE, warning=FALSE, echo=F}
+model_data= delta_data_1
+model_data = filter(model_data,trait.x %in% c("soil_mois_1_10","soil_mois_2_20") )
+model_data$type = "soil_moisture_percent"
+ 
+traits = unique(model_data$type)
+model_data$sum_deltas = as.double(model_data$sum_deltas )
+
+#model_data = model_data %>% filter(LOCATION== "ALMUDEVAR")
+
+outlier_data = data_with_model_outlier_check_by_location(model_data,3)
+
+
+table(outlier_data$DSR_by_location_outlier_flag)
+
+ssc_data_outlier_no_outlier = filter(outlier_data,DSR_by_location_outlier_flag==FALSE )
+#table(ssc_data_outlier_no_outlier$DSR_by_location_outlier_flag)
+
+#DT::datatable(ssc_data_outlier_no_outlier, filter="top")
+
+# model_data_summary = model_data %>% group_by(LOCATION,VARIETY,type,trait,replicate) %>% summarise(value= mean(value))
+# 
+# model_data_summary_loc1 = model_data_summary %>% filter(LOCATION== "ALMUDEVAR")
+# 
+# model_data_summary_loc1_trait1 = filter(model_data_summary_loc1, type=="Hydric potential (kPa) 30 cm")
+# 
+# model = lmerTest::lmer(value ~ VARIETY + (1|replicate), data = model_data_summary_loc1_trait1)
+# 
+# lsm1 = emmeans::lsmeans(model,~VARIETY)  
+# library(multcompView)
+#   lsm1.df = multcomp::cld(lsm1,alpha=0.1,Letters=LETTERS,sort=TRUE,adjust="none")
+```
+
+
+```{r message=FALSE, warning=FALSE, echo=F,fig.width=14}
+
+
+#only SSCs
+  ssc_data=ssc_data_outlier_no_outlier
+ 
+ssc_data_1 = ssc_data
+
+
+#ssc_data_no_nas_ssc = ssc_data_high_ye%>% filter(hybrid %in% c("EW6846"))
+   library(multcompView)
+ssc_data$system = as.factor(ssc_data$system)
+
+ssc_data$trait.x  = as.factor(ssc_data$trait.x  )
+
+
+
+#STANDART 100
+
+mod_results=by_location_analysis(ssc_data) 
+lsmeans_results = as.data.frame(mod_results[1])
+anova_results = as.data.frame(mod_results[2])
+contrast_results = as.data.frame(mod_results[3])
+
+#ssc_hybrids = c("EW6846XKL1" ,"EW6015XKL1","EW6436XKL1","EW6650XKP1","EW6526XKL1","EW6846","EW6436")
+ 
+#lsmeans_results = lsmeans_results %>% mutate(hybrid_type = ifelse(hybrid_name %in% ssc_hybrids, "ssc","tall"))
+
+library(stringr)
+lsmeans_results_ps= lsmeans_results %>%
+  mutate_if(is.character, str_trim)
+lsmeans_results_ps= lsmeans_results_ps %>%
+  mutate(across(where(is.character), str_remove_all, pattern = fixed(" ")))
+ 
+lsmeans_results_ps$Group = as.factor(lsmeans_results_ps$.group)
+lsmeans_results_ps= lsmeans_results_ps %>% mutate_if(is.numeric, round, 1)
+pd <- position_dodge(0.1)
+plot_lsmeans=ggplot(lsmeans_results_ps,aes(reorder( system,-lsmean),lsmean, fill=as.factor(system)))+geom_bar(stat="identity",position="dodge")+xlab("Product")+ylab(" LSMeans")+
+  #theme_classic() + 
+  theme( axis.text = element_text( size = 10 ),
+         axis.text.x = element_text( size = 10 ),
+         axis.title = element_text( size = 10, face = "bold" ),strip.text = element_text(size = 13, face = 'bold') ) +
+     geom_text(aes(label=lsmean,y = lsmean, group = system), position = position_dodge(width = 0.8), vjust = -0.9, 
+            size = 3)+ theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))+
+  geom_errorbar(aes(ymin=lsmean-SE, ymax=lsmean+SE), width=.2,
+                position=position_dodge(.9))+xlab("Factor")+ylab("lsmeans - Delta sum")+geom_text(aes(label = Group, y = -5, group = system), vjust = -0.9, 
+            size = 3, position = position_dodge(width = 0.8))+xlab("Hybrid")+ggtitle("POURSIUGUES (SSC6 100%) - Comparison of Delta sum across 10 and 20 cm depth")
+plot_lsmeans
+
+plot_lsmeans_10_4 = plot_lsmeans
+
+
+#DT::datatable(anova_results)
+  #DT::datatable(lsmeans_results)
+  
+#plot_lsmeans_ssc_only(lsmeans_results)
+
+contrast_results = contrast_results%>% separate(contrast, into=c("SSC system 1","SSC system 2"), sep=" - ",remove=F)
+
+
+
+
+
+#DT::datatable(lsmeans_results_ps, filter="top")
+
+#DT::datatable(contrast_results, filter="top")
+
+```
+
+# Location POURSIUGUES (SSC7 75%)
+
+
+
+	
+	
+```{r message=FALSE, warning=FALSE, echo=FALSE,fig.height=15, fig.width=15}
+#sondes_data_2_gather_summary_1_plot
+
+
+
+sondes_data_2_gather_summary_1_plot_1 = filter(sondes_data_2_gather_summary_1_plot, location.x == "POURSIUGUES (SSC7 75%)")
+
+sondes_data_2_gather_summary_1_plot_1 = sondes_data_2_gather_summary_1_plot_1 %>% mutate(hybrid_rowwidth= ifelse(system=="DKC5812 Densité tradi - 95 000 plt/ha - 40 cm","DKC5812_40cm",ifelse(system=="DKC5812 FARMER SYSTEM - 85 000 plt/ha - 80 cm","DKC5812_80cm",ifelse(system=="EZ5936XKPZ - Densité 2: 120 000 plt/ha - 40 cm","EZ5936XKPZ_40cm","EZ5936XKPZ_80cm"))))
+
+unique(sondes_data_2_gather_summary_1_plot_1$trait.x)
+
+sondes_data_2_gather_summary_1_plot_1 = sondes_data_2_gather_summary_1_plot_1 %>% unite(hybrid_trait,system, sep="__", remove=F)
+
+p <- ggplot(sondes_data_2_gather_summary_1_plot_1, aes(x=as.Date(dat), y=value_transformed, color=hybrid_trait,alpha=0.5)) +
+  geom_line() + 
+  xlab("")+ggtitle("Soil Moisture (%) - Using the Coefficient method")+facet_grid(trait.x~location.x,scales="free_y")
+plotly::ggplotly(p)
+```
+
+July - 03	July - 06
+July - 07	July - 11
+July - 12	July - 22
+July - 23	August - 09
+August - 10	August - 18
+August - 20	August - 27
+August - 29	August - 30
+August - 31	Sept - 03
+Sept - 04	Sept - 07
+Sept - 08	Sept - 09
+Sept - 10	Sept - 17
+
+
+	
+
+```{r message=FALSE, warning=FALSE, echo=FALSE,fig.height=10, fig.width=12}
+#dates_1 = c(seq(ymd('2024-07-16'),ymd('2024-07-19'),by='days'),seq(ymd('2024-07-21'),ymd('2024-07-23'),by='days'),seq(ymd('2024-07-25'),ymd('2024-07-26'),by='days'),seq(ymd('2024-07-28'),ymd('2024-07-29'),by='days'),seq(ymd('2024-08-02'),ymd('2024-08-06'),by='days'),seq(ymd('2024-08-07'),ymd('2024-08-09'),by='days'),seq(ymd('2024-08-10'),ymd('2024-08-11'),by='days'),seq(ymd('2024-08-20'),ymd('2024-08-29'),by='days'),seq(ymd('2024-09-04'),ymd('2024-09-05'),by='days'),seq(ymd('2024-09-12'),ymd('2024-09-21'),by='days'),seq(ymd('2024-09-26'),ymd('2024-10-05'),by='days'),seq(ymd('2024-10-10'),ymd('2024-10-13'),by='days'))
+
+dates_1 = c('2025-07-03','2025-07-06','2025-07-08','2025-07-11','2025-07-13','2025-07-22','2025-07-24','2025-08-09','2025-08-11','2025-08-19','2025-08-21','2025-08-27','2025-09-01','2025-09-08','2025-09-09','2025-09-17')
+
+dates_1 = ymd(dates_1) 
+
+
+
+
+
+sondes_data_2_gather_summary_1_plot_1_dates = filter(sondes_data_2_gather_summary_1_plot_1, dat%in% dates_1)
+
+sondes_data_2_gather_summary_1_plot_1_dates = sondes_data_2_gather_summary_1_plot_1_dates %>% mutate(first_or_last=ifelse(dat %in% ymd(c('2025-07-03','2025-07-08','2025-07-13','2025-07-24','2025-08-11','2025-08-21','2025-09-01','2025-09-09')),"first","last"))
+
+p <- ggplot(sondes_data_2_gather_summary_1_plot_1_dates, aes(x=as.Date(dat), y=value_transformed, color=hybrid_trait,alpha=0.5)) +
+  geom_point() + 
+  xlab("")+ggtitle("Soil Temperature - Using the Coefficient method")+facet_grid(trait.x~location.x,scales="free_y")
+plotly::ggplotly(p)
+
+
+#ifelse(as.Date(date, "%d/%m/%Y") < as.Date("2001-02-02"), 1, 2)
+#data %>% filter(as.Date(date1) %within% interval(start_date, current_date) | as.Date(date2) %within% interval(current_date, end_date) | (is.na(date1) & is.na(date2)))
+
+sondes_data_2_gather_summary_1_plot_1_dates = sondes_data_2_gather_summary_1_plot_1_dates %>% mutate(date_phases = ifelse(dat >='2025-07-03' & dat <='2025-07-06', "01_phase",ifelse(dat >='2025-07-08' & dat <='2025-07-11', "02_phase",ifelse(dat >='2025-07-13' & dat <='2025-07-22', "03_phase",ifelse(dat >='2024-07-24' & dat <='2024-08-09', "04_phase",ifelse(dat >='2025-08-11' & dat <='2025-08-19', "05_phase",ifelse(dat >='2025-08-21' & dat <='2025-08-27', "06_phase",ifelse(dat >='2025-09-01' & dat <='2025-09-08', "07_phase",ifelse(dat >='2025-09-09' & dat <='2025-09-17', "08_phase","12_phase")))))))))
+
+#DT::datatable(sondes_data_2_gather_summary_1_plot_1_dates, filter="top")
+
+#sondes_data_2_gather_summary_1_plot_1_dates_spread = sondes_data_2_gather_summary_1_plot_1_dates %>% spread(first_or_last,value_transformed) 
+# %>%
+#  mutate(rf.diff = rf - first(rf))
+sondes_data_2_gather_summary_1_plot_1_dates_summary = sondes_data_2_gather_summary_1_plot_1_dates %>% group_by(system,trait.y,date_phases,hybrid_rowwidth) %>% mutate(delta=round(first(value_transformed)-value_transformed,4))
+
+sondes_data_2_gather_summary_1_plot_1_dates_summary_1 = filter(sondes_data_2_gather_summary_1_plot_1_dates_summary, first_or_last!="first")
+
+
+#sondes_data_2_gather_summary_1_plot_1_dates_summary_1 = filter(sondes_data_2_gather_summary_1_plot_1_dates_summary, delta>0)
+
+DT::datatable(sondes_data_2_gather_summary_1_plot_1_dates_summary_1, filter="top")
+
+
+#pdf = df %>% group_by(group) %>% mutate(cs = cumsum(sales))
+
+p <- ggplot(sondes_data_2_gather_summary_1_plot_1_dates_summary_1, aes(x=as.Date(dat), y=delta, color=system,alpha=0.5)) +
+  geom_line()+geom_point()+
+  xlab("")+ggtitle("Dynamics of delta across the season")+facet_grid(trait.x~location.x,scales="free_y")
+plotly::ggplotly(p)
+
+#calculate cumulative delta over the different phases (periods)
+sondes_data_2_gather_summary_1_plot_1_dates_summary_1 = sondes_data_2_gather_summary_1_plot_1_dates_summary_1 %>% mutate(delta = ifelse(delta <0, 0, delta))
+
+cumulative_data = sondes_data_2_gather_summary_1_plot_1_dates_summary_1 %>% group_by(location.x,trait.x,hybrid_trait) %>% mutate(cumulative_delta = cumsum(delta))
+
+p <- ggplot(cumulative_data, aes(x=as.Date(dat), y=cumulative_delta, color=system,alpha=0.5)) +
+  geom_line()+geom_point()+
+  xlab("")+ggtitle("Dynamics of cumulative delta across the season")+facet_grid(trait.x~location.x)
+plotly::ggplotly(p)
+
+cumulative_5 = p
+
+
+
+delta_data = sondes_data_2_gather_summary_1_plot_1_dates_summary_1 %>% group_by(location.x ,system,trait.x,hybrid_trait,hybrid_factor_trait,hybrid_rowwidth) %>% summarise(sum_deltas= sum(delta),mean_deltas= mean(delta))
+
+DT::datatable(delta_data, filter="top")
+
+p=ggplot(delta_data, aes(hybrid_rowwidth,sum_deltas,fill=system))+geom_bar(stat="identity", position="dodge")+facet_grid(trait.x~location.x)
+plotly::ggplotly(p)
+
+delta_data_1 = filter(delta_data, trait.x!="average_moisture")
+```
+
+
+
+## Statistical analysis - Comparison of delta sums across all soil depths between the different hybrid systems.
+
+```{r message=FALSE, warning=FALSE, echo=F}
+model_data= delta_data_1
+model_data$type = "soil_moisture_percent"
+
+traits = unique(model_data$type)
+model_data$sum_deltas = as.double(model_data$sum_deltas )
+
+#model_data = model_data %>% filter(LOCATION== "ALMUDEVAR")
+
+outlier_data = data_with_model_outlier_check_by_location(model_data,3)
+
+
+table(outlier_data$DSR_by_location_outlier_flag)
+
+ssc_data_outlier_no_outlier = filter(outlier_data,DSR_by_location_outlier_flag==FALSE )
+#table(ssc_data_outlier_no_outlier$DSR_by_location_outlier_flag)
+
+#DT::datatable(ssc_data_outlier_no_outlier, filter="top")
+
+# model_data_summary = model_data %>% group_by(LOCATION,VARIETY,type,trait,replicate) %>% summarise(value= mean(value))
+# 
+# model_data_summary_loc1 = model_data_summary %>% filter(LOCATION== "ALMUDEVAR")
+# 
+# model_data_summary_loc1_trait1 = filter(model_data_summary_loc1, type=="Hydric potential (kPa) 30 cm")
+# 
+# model = lmerTest::lmer(value ~ VARIETY + (1|replicate), data = model_data_summary_loc1_trait1)
+# 
+# lsm1 = emmeans::lsmeans(model,~VARIETY)  
+# library(multcompView)
+#   lsm1.df = multcomp::cld(lsm1,alpha=0.1,Letters=LETTERS,sort=TRUE,adjust="none")
+```
+
+
+```{r message=FALSE, warning=FALSE, echo=F,fig.width=14}
+
+
+#only SSCs
+  ssc_data=ssc_data_outlier_no_outlier
+ 
+ssc_data_1 = ssc_data
+
+
+#ssc_data_no_nas_ssc = ssc_data_high_ye%>% filter(hybrid %in% c("EW6846"))
+   library(multcompView)
+ssc_data$system = as.factor(ssc_data$system)
+
+ssc_data$trait.x  = as.factor(ssc_data$trait.x  )
+
+
+
+#STANDART 100
+
+mod_results=by_location_analysis(ssc_data) 
+lsmeans_results = as.data.frame(mod_results[1])
+anova_results = as.data.frame(mod_results[2])
+contrast_results = as.data.frame(mod_results[3])
+
+#ssc_hybrids = c("EW6846XKL1" ,"EW6015XKL1","EW6436XKL1","EW6650XKP1","EW6526XKL1","EW6846","EW6436")
+ 
+#lsmeans_results = lsmeans_results %>% mutate(hybrid_type = ifelse(hybrid_name %in% ssc_hybrids, "ssc","tall"))
+
+library(stringr)
+lsmeans_results_ps= lsmeans_results %>%
+  mutate_if(is.character, str_trim)
+lsmeans_results_ps= lsmeans_results_ps %>%
+  mutate(across(where(is.character), str_remove_all, pattern = fixed(" ")))
+ 
+lsmeans_results_ps$Group = as.factor(lsmeans_results_ps$.group)
+lsmeans_results_ps= lsmeans_results_ps %>% mutate_if(is.numeric, round, 1)
+pd <- position_dodge(0.1)
+plot_lsmeans=ggplot(lsmeans_results_ps,aes(reorder( system,-lsmean),lsmean, fill=as.factor(system)))+geom_bar(stat="identity",position="dodge")+xlab("Product")+ylab(" LSMeans")+
+  #theme_classic() + 
+  theme( axis.text = element_text( size = 10 ),
+         axis.text.x = element_text( size = 10 ),
+         axis.title = element_text( size = 10, face = "bold" ),strip.text = element_text(size = 13, face = 'bold') ) +
+     geom_text(aes(label=lsmean,y = lsmean, group = system), position = position_dodge(width = 0.8), vjust = -0.9, 
+            size = 3)+ theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))+
+  geom_errorbar(aes(ymin=lsmean-SE, ymax=lsmean+SE), width=.2,
+                position=position_dodge(.9))+xlab("Factor")+ylab("lsmeans - Delta sum")+geom_text(aes(label = Group, y = -5, group = system), vjust = -0.9, 
+            size = 3, position = position_dodge(width = 0.8))+xlab("Hybrid")+ggtitle("POURSIUGUES (SSC7 75%) - Comparison of Delta sum across all soil depths")
+plot_lsmeans
+
+plot_lsmeans_5 = plot_lsmeans
+
+
+#DT::datatable(anova_results)
+  #DT::datatable(lsmeans_results)
+  
+#plot_lsmeans_ssc_only(lsmeans_results)
+
+contrast_results = contrast_results%>% separate(contrast, into=c("SSC system 1","SSC system 2"), sep=" - ",remove=F)
+
+#DT::datatable(lsmeans_results_ps, filter="top")
+
+#DT::datatable(contrast_results, filter="top")
+
+```
+
+
+## Statistical analysis - Comparison of delta sums across 10 and 20 cm depths between the different hybrid systems.
+
+```{r message=FALSE, warning=FALSE, echo=F}
+model_data= delta_data_1
+model_data = filter(model_data,trait.x %in% c("soil_mois_1_10","soil_mois_2_20") )
+model_data$type = "soil_moisture_percent"
+ 
+traits = unique(model_data$type)
+model_data$sum_deltas = as.double(model_data$sum_deltas )
+
+#model_data = model_data %>% filter(LOCATION== "ALMUDEVAR")
+
+outlier_data = data_with_model_outlier_check_by_location(model_data,3)
+
+
+table(outlier_data$DSR_by_location_outlier_flag)
+
+ssc_data_outlier_no_outlier = filter(outlier_data,DSR_by_location_outlier_flag==FALSE )
+#table(ssc_data_outlier_no_outlier$DSR_by_location_outlier_flag)
+
+#DT::datatable(ssc_data_outlier_no_outlier, filter="top")
+
+# model_data_summary = model_data %>% group_by(LOCATION,VARIETY,type,trait,replicate) %>% summarise(value= mean(value))
+# 
+# model_data_summary_loc1 = model_data_summary %>% filter(LOCATION== "ALMUDEVAR")
+# 
+# model_data_summary_loc1_trait1 = filter(model_data_summary_loc1, type=="Hydric potential (kPa) 30 cm")
+# 
+# model = lmerTest::lmer(value ~ VARIETY + (1|replicate), data = model_data_summary_loc1_trait1)
+# 
+# lsm1 = emmeans::lsmeans(model,~VARIETY)  
+# library(multcompView)
+#   lsm1.df = multcomp::cld(lsm1,alpha=0.1,Letters=LETTERS,sort=TRUE,adjust="none")
+```
+
+
+```{r message=FALSE, warning=FALSE, echo=F,fig.width=14}
+
+
+#only SSCs
+  ssc_data=ssc_data_outlier_no_outlier
+ 
+ssc_data_1 = ssc_data
+
+
+#ssc_data_no_nas_ssc = ssc_data_high_ye%>% filter(hybrid %in% c("EW6846"))
+   library(multcompView)
+ssc_data$system = as.factor(ssc_data$system)
+
+ssc_data$trait.x  = as.factor(ssc_data$trait.x  )
+
+
+
+#STANDART 100
+
+mod_results=by_location_analysis(ssc_data) 
+lsmeans_results = as.data.frame(mod_results[1])
+anova_results = as.data.frame(mod_results[2])
+contrast_results = as.data.frame(mod_results[3])
+
+#ssc_hybrids = c("EW6846XKL1" ,"EW6015XKL1","EW6436XKL1","EW6650XKP1","EW6526XKL1","EW6846","EW6436")
+ 
+#lsmeans_results = lsmeans_results %>% mutate(hybrid_type = ifelse(hybrid_name %in% ssc_hybrids, "ssc","tall"))
+
+library(stringr)
+lsmeans_results_ps= lsmeans_results %>%
+  mutate_if(is.character, str_trim)
+lsmeans_results_ps= lsmeans_results_ps %>%
+  mutate(across(where(is.character), str_remove_all, pattern = fixed(" ")))
+ 
+lsmeans_results_ps$Group = as.factor(lsmeans_results_ps$.group)
+lsmeans_results_ps= lsmeans_results_ps %>% mutate_if(is.numeric, round, 1)
+pd <- position_dodge(0.1)
+plot_lsmeans=ggplot(lsmeans_results_ps,aes(reorder( system,-lsmean),lsmean, fill=as.factor(system)))+geom_bar(stat="identity",position="dodge")+xlab("Product")+ylab(" LSMeans")+
+  #theme_classic() + 
+  theme( axis.text = element_text( size = 10 ),
+         axis.text.x = element_text( size = 10 ),
+         axis.title = element_text( size = 10, face = "bold" ),strip.text = element_text(size = 13, face = 'bold') ) +
+     geom_text(aes(label=lsmean,y = lsmean, group = system), position = position_dodge(width = 0.8), vjust = -0.9, 
+            size = 3)+ theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))+
+  geom_errorbar(aes(ymin=lsmean-SE, ymax=lsmean+SE), width=.2,
+                position=position_dodge(.9))+xlab("Factor")+ylab("lsmeans - Delta sum")+geom_text(aes(label = Group, y = -5, group = system), vjust = -0.9, 
+            size = 3, position = position_dodge(width = 0.8))+xlab("Hybrid")+ggtitle("POURSIUGUES (SSC6 75%) - Comparison of Delta sum across 10 and 20 cm depth")
+plot_lsmeans
+
+plot_lsmeans_10_5 = plot_lsmeans
+
+
+#DT::datatable(anova_results)
+  #DT::datatable(lsmeans_results)
+  
+#plot_lsmeans_ssc_only(lsmeans_results)
+
+contrast_results = contrast_results%>% separate(contrast, into=c("SSC system 1","SSC system 2"), sep=" - ",remove=F)
+
+
+
+
+
+#DT::datatable(lsmeans_results_ps, filter="top")
+
+#DT::datatable(contrast_results, filter="top")
+
+```
+
+# Accumulated delta sum - All locations
+
+```{r message=FALSE, warning=FALSE, echo=FALSE,fig.height=10, fig.width=12}
+
+plotly::ggplotly(cumulative_1)
+
+
+plotly::ggplotly(cumulative_2)
+
+
+plotly::ggplotly(cumulative_3)
+
+plotly::ggplotly(cumulative_4)
+
+plotly::ggplotly(cumulative_5)
+```
+
+
+
+# Statistical analysis results - All locations across all soil depths
+
+```{r message=FALSE, warning=FALSE, echo=FALSE,fig.height=10, fig.width=12}
+plot_lsmeans_1
+
+plot_lsmeans_2
+
+
+plot_lsmeans_3
+
+plot_lsmeans_4
+
+plot_lsmeans_5
+```
+
+
+# Statistical analysis results - All locations across 10 and 20cm soil depths
+
+```{r message=FALSE, warning=FALSE, echo=FALSE,fig.height=10, fig.width=12}
+plot_lsmeans_10_1
+
+plot_lsmeans_10_2
+
+
+plot_lsmeans_10_3
+
+plot_lsmeans_10_4
+
+plot_lsmeans_10_5
+```
+
