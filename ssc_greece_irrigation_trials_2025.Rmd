@@ -1,0 +1,3070 @@
+---
+title: "SSC Water Management trials in Greece - Statistical Analysis"
+author: "Naharajan Lakshmanaperumal, Senior Data Scientist, EMEA Agronomy"
+date: "03.03.2026"
+output:
+  slidy_presentation: default
+  word_document:
+    reference_docx: south_africa_variety_data_report_final.docx
+  beamer_presentation: default
+  pdf_document: default
+  html_document:
+    toc: true
+    toc_float: true
+always_allow_html: yes
+---
+
+# Contents
+
+<div class="logos"><img src="/mnt/images/emea_md_logo_3.PNG" width="50px" align="right"></div>
+ 
+<div class="logos"><img src="/mnt/images/RZ_EMEA_Sign_Claim_Screen_RGB_on_white (1) (1).png" width="100px" align="right"></div>
+
+
+- SSC Water management trials 
+
+- Data Summary
+
+- Exploratory data analysis
+
+- Statistical data analysis
+  
+- Summary
+
+<div class="logos"><img src="/mnt/images/restricted.PNG" width="100px" align="right"></div>
+
+# Analysis
+
+Hi Naha,
+
+Here the files:
+1.	SSC 2025 water --> mainly the yield data, I added one sheet with 2024+2025 data. 
+As discussed the idea will be to have 
+One analyses on the yield 2025 
+One analyses on the yield 2024+2025
+But for both, as the densities among hybrids are too variable, we can’t compare correctly the results, so we need to do an ANCOVA or something else where the density is the covariable to isolate the density effect.
+
+I checked it was the same in 2024...
+
+2.	Sensors_data_2025: The same analyses as last year for the sensors data 
+
+I attached the protocol if you need to re-check the design, modalities....
+But overall we evaluate 2 system
+SSC high density 125K at 80cm 
+SSC high density 125K at 40cm
+VS 
+Tall classical farmer condition 85K normal row 80cm
+
+The idea is to understand if one system or both is more resilient to an irrigation reduction during grain filling time (stress occur end of June until end of July)
+
+If any question, please do not hesitate
+
+Thanks!
+
+## Aim 
+
+The Preceon Smart Corn System, with short-stature corn hybrids, possesses characteristics that could potentially lead to improvements in water use efficiency (WUE) of the corn cropping system. There are documented changes in above-ground biomass and N partitioning (Kosola et al., 2023), as well as higher yield rate than tall hybrids in a moderate grain filling stress for specific smart corn hybrids (Syntech and Athens University/Direct Science, 2022-2023). Initial data collected by the Bayer Research and Development and Market Development teams suggests that short-stature corn hybrids have a deeper and more robust rooting system, a different canopy microclimate due to a more densely packed leaf canopy and may have periods of time where the relative humidity within the canopy is higher in short-stature corn.   
+
+## Treatments
+
+Irrigation rates:  
+- 100% irrigated trials
+- 75% irrigated trials
+
+Inter-rows:
+- 75 cm of inter-rows for DKCs check and short-stature corn  
+- 40 cm of inter-rows for short-stature corn only  
+
+Hybrids:
+
+- DKC6808 vs EW6436XKLZ = DKC6836SC 
+- DKC6980 vs EW6846XKLZ = DKC7236SC 
+- DKC6625 vs EX6658XKLZ = DKC6648SC 
+- Isogenic: ET6641XKYZ compared to DKC6503  
+
+TOTAL:
+
+4 short stature corn hybrids  
+4 DKC commercial check = tall hybrids  
+
+Time of irrigation:  
+
+100%, then 75% at flowering time (when 50% of the silk are visible) until ALS (Abortion limiting stage). Then 100% during maturation time.
+
+System of irrigation: drip irrigation will be used  
+
+Density: 85K check and 125K short-stature corn  
+Seeds: around 2 bags of 25K / hybrid will be sent
+
+
+## Experimental design
+
+Trials size: micro plot with 4 replicates  
+4 rows  
+For 75 cm 1 plot = 60m²  
+For 40 cm 1 plot = 32m²  
+
+**TOTAL OF 3 trials x 4 replicates**
+
+# Exploratory analysis 2025 season - Yield vs Density 
+
+
+```{r echo=F, message=F, warning=F, fig.width=16, fig.height=7}
+# Load required packages
+library(readxl)
+library(lme4)
+library(lmerTest)
+library(emmeans)
+library(car)
+library(ggplot2)
+library(dplyr)
+library(multcomp)
+library(tidyr)
+
+# Import data (assuming it's in a csv file)
+# For the code example, I'll use the provided dataset
+ssc_data = read_excel("/mnt/data/SSC_2025_water_Naha.xlsx", sheet = 1)
+
+names(ssc_data)[9] = "target_density"
+names(ssc_data)[10] = "interrow_width"
+names(ssc_data)[15] = "harvest_density"
+names(ssc_data)[20] = "dry_yield"
+
+#renaming hybrids
+#ssc_data = ssc_data %>% mutate(Hybrid  = ifelse(Hybrid %in% c("DKC6836SC(N)", "DKC6836SC_40cm"),"DKC6836SC",ifelse(Hybrid %in% c("DKC7236SC(N)", "DKC7236SC_40cm"),"DKC7236SC",ifelse(Hybrid %in% c( "ET6641XYZ(N)", "ET6641SC_40cm","ET6641SC"),"ET6641XYZ",ifelse(Hybrid %in% c( "DKC6648SC_40cm", "DKC6648SC","DKC6648SC(N)"),"DKC6648SC",Hybrid)))))
+
+
+# Examine data structure
+
+data=ssc_data
+# Convert categorical variables to factors
+data$Hybrid <- as.factor(data$Hybrid)
+data$Irrigation <- as.factor(data$Irrigation)
+data$interrow_width <- as.factor(data$interrow_width)
+data$Replicates <- as.factor(data$Replicates)
+data$Range <- as.factor(data$Range)
+
+# Create hybrid type variable for analysis
+data$hybrid_type <- ifelse(grepl("SC", data$Hybrid), "SC", "Tall")
+data$hybrid_type <- ifelse(grepl("XYZ", data$Hybrid), "SC", data$hybrid_type)
+data$hybrid_type <- as.factor(data$hybrid_type)
+
+
+# Look at the relationship between harvest density and yield
+ggplot(data, aes(x = harvest_density, y = dry_yield, color = Irrigation)) +
+  geom_point(alpha = 0.7) +
+  geom_smooth(method = "lm", se = FALSE) +
+  facet_grid(interrow_width ~ hybrid_type) +
+  labs(title = "Yield vs Harvest Density",
+       x = "Harvest Density (plants/ha)",
+       y = "Dry Yield (t/ha)")+
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+
+
+ggplot(data, aes(x = harvest_density, y = dry_yield, color = Irrigation)) +
+  geom_point(alpha = 0.7) +
+  geom_smooth(method = "lm", se = FALSE) +
+  facet_grid(interrow_width ~ Hybrid) +
+  labs(title = "Yield vs Harvest Density",
+       x = "Harvest Density (plants/ha)",
+       y = "Dry Yield (t/ha)") +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+
+
+```
+
+# Statistical analysis - 2025 season
+
+
+## Testing for density impact
+
+### Model 1: Density as a covariate
+
+- Harvest density values were normalized for better interpretation in models
+
+```{r, eval=F}
+m1 <- lmer(dry_yield ~ Irrigation * interrow_width * Hybrid + harvest_density_c +
+             (1|Field/Replicates) +                    # Block effect
+             (1|Field/Replicates:Irrigation) +         # Main plot error (irrigation)
+             (1|Field/Replicates:Irrigation:interrow_width),  # Sub-plot error
+           data = data)
+```
+
+
+```{r echo=F, message=F, warning=F}
+# Center harvest density for better interpretation in models
+data$harvest_density_c <- scale(data$harvest_density, center = TRUE, scale = FALSE)[,1]
+
+# First fit a full model to assess density effects
+# Using split-split plot design structure with proper error terms
+m1 <- lmer(dry_yield ~ Irrigation * interrow_width * Hybrid + harvest_density_c +
+             (1|Field/Replicates) +                    # Block effect
+             (1|Field/Replicates:Irrigation) +         # Main plot error (irrigation)
+             (1|Field/Replicates:Irrigation:interrow_width),  # Sub-plot error
+           data = data)
+
+# Check model assumptions
+qqnorm(resid(m1))
+qqline(resid(m1))
+plot(m1)
+Anova(m1, type = 2)
+```
+
+
+###  Model 2 :-  Density as part of the interaction term to test if desity interacts with other treatments
+
+```{r, eval=F}
+m2 <- lmer(dry_yield ~ (Irrigation * interrow_width * Hybrid) * harvest_density_c +
+             (1|Field/Replicates) +
+             (1|Field/Replicates:Irrigation) +
+             (1|Field/Replicates:Irrigation:interrow_width),
+           data = data)
+```
+
+
+```{r echo=F, message=F, warning=F}
+# Test if density interacts with treatments
+m2 <- lmer(dry_yield ~ (Irrigation * interrow_width * Hybrid) * harvest_density_c +
+             (1|Field/Replicates) +
+             (1|Field/Replicates:Irrigation) +
+             (1|Field/Replicates:Irrigation:interrow_width),
+           data = data)
+
+# Check model assumptions
+qqnorm(resid(m2))
+qqline(resid(m2))
+plot(m2)
+Anova(m2, type = 2)
+```
+
+### Model 3 :-  Simpler model with just density as the only factor
+
+```{r eval=F}
+# Model with only density
+m_density <- lmer(dry_yield ~ harvest_density_c +
+                    (1|Field/Replicates) +
+                    (1|Field/Replicates:Irrigation) +
+                    (1|Field/Replicates:Irrigation:interrow_width),
+                  data = data)
+# Check model assumptions
+qqnorm(resid(m_density))
+qqline(resid(m_density))
+plot(m_density)
+Anova(m_density, type = 2)
+```
+
+
+```{r echo=F, message=F, warning=F}
+# Model with only density
+m_density <- lmer(dry_yield ~ harvest_density_c +
+                    (1|Field/Replicates) +
+                    (1|Field/Replicates:Irrigation) +
+                    (1|Field/Replicates:Irrigation:interrow_width),
+                  data = data)
+# Check model assumptions
+qqnorm(resid(m_density))
+qqline(resid(m_density))
+plot(m_density)
+Anova(m_density, type = 2)
+```
+
+
+### Compare 3 models
+
+```{r echo=F, message=F, warning=F}
+
+
+# Test significance of density effect
+#summary(m1)
+
+
+# Compare models to see if density interactions are significant
+anova(m1, m2,m_density)
+
+# ==========================================
+# 2. Main Analysis: Irrigation × Inter-row Width × Hybrid effects
+# ==========================================
+
+# Use the simpler model if density interactions are not significant
+# (based on previous test)
+
+# Get Type III ANOVA to test main effects and interactions
+
+
+# Extract coefficient for density effect
+summary(m1)
+coef_summary <- summary(m1)$coefficients
+density_effect <- coef_summary["harvest_density_c", "Estimate"]
+density_p <- coef_summary["harvest_density_c", "Pr(>|t|)"]
+
+cat("Yield change per 1000 plants/ha:", density_effect * 1000, "t/ha, p =", density_p, "\n")
+
+
+```
+
+### Quantifying variance explanation using R2 values - Density vs Full model
+
+```{r echo=F, message=F, warning=F}
+
+# Model with only density
+m_density <- lmer(dry_yield ~ harvest_density_c +
+                    (1|Field/Replicates) +
+                    (1|Field/Replicates:Irrigation) +
+                    (1|Field/Replicates:Irrigation:interrow_width),
+                  data = data)
+
+# Calculate R-squared for density-only model
+r2_density <- performance::r2(m_density)
+
+# Calculate R-squared for full model
+r2_full <- performance::r2(m1)
+
+cat("Variance explained by density alone:", r2_density$R2_marginal, "\n")
+cat("Total variance explained by full model:", r2_full$R2_marginal, "\n")
+cat("Additional variance explained by treatments:", 
+    r2_full$R2_marginal - r2_density$R2_marginal, "\n")
+
+# # Calculate density effect size
+# density_sd <- sd(data$harvest_density)
+# density_range <- range(data$harvest_density)
+# density_range_effect <- diff(density_range) * density_effect
+# 
+# # Calculate treatment effect ranges
+# # Extract predictions across all treatment combinations
+# grid <- expand.grid(
+#   Irrigation = levels(data$Irrigation),
+#   interrow_width = levels(data$interrow_width),
+#   Hybrid = levels(data$Hybrid)[1:8],  # Using first 8 hybrids for clarity
+#   harvest_density_c = 0
+# )
+# 
+# # Predict values
+# predictions <- predict(m1, newdata = grid, re.form = NA)
+# grid$predicted <- predictions
+# 
+# # Calculate ranges by factor
+# irrig_range <- tapply(grid$predicted, grid$Irrigation, mean)
+# irrig_effect_magnitude <- max(irrig_range) - min(irrig_range)
+# 
+# row_range <- tapply(grid$predicted, grid$interrow_width, mean)
+# row_effect_magnitude <- max(row_range) - min(row_range)
+# 
+# hybrid_range <- tapply(grid$predicted, grid$Hybrid, mean)
+# hybrid_effect_magnitude <- max(hybrid_range) - min(hybrid_range)
+# 
+# # Compare magnitudes
+# effect_magnitudes <- data.frame(
+#   Factor = c("Plant Density (full range)", 
+#              "Irrigation (100% vs 75%)", 
+#              "Row Spacing (75cm vs 40cm)",
+#              "Hybrid (best vs worst)"),
+#   Magnitude = c(density_range_effect, 
+#                 irrig_effect_magnitude, 
+#                 row_effect_magnitude, 
+#                 hybrid_effect_magnitude)
+# )
+# 
+# ggplot(effect_magnitudes, aes(x = reorder(Factor, Magnitude), y = Magnitude)) +
+#   geom_bar(stat = "identity", fill = "darkgreen") +
+#   coord_flip() +
+#   labs(title = "Magnitude of effects on yield (t/ha)",
+#        subtitle = "Comparing observed ranges of each factor",
+#        x = "", y = "Effect on yield (t/ha)")
+```
+
+
+### Treatment Means - After Adjustmust for Density
+
+- Estimated marginal means for irrigation (adjusted for density)
+
+- Estimated marginal means for row spacing (adjusted for density)
+
+- Irrigation × Row spacing interaction
+
+- Hybrid Analysis
+
+- Irrigation * interrow_width * Hybrid interaction
+
+```{r echo=F, message=F, warning=F}
+# ==========================================
+# 3. Treatment Means Adjusted for Density
+# ==========================================
+
+# Estimated marginal means for irrigation (adjusted for density)
+emm_irrig <- emmeans(m1, ~ Irrigation, at = list(harvest_density_c = 0))
+print(emm_irrig)
+pairs(emm_irrig)
+emm_irrig= cld(emm_irrig, Letters = letters, adjust = "tukey")
+emm_irrig = as.data.frame(emm_irrig)
+pd <- position_dodge(0.1)
+plot_lsmeans=ggplot(emm_irrig,aes(reorder(Irrigation ,-emmean),emmean, fill=.group))+geom_bar(stat="identity")+xlab("Hybrid")+ylab(" LSMeans (Dry yield, t/ha)")+
+  #theme_classic() + 
+  theme( axis.text = element_text( size = 10 ),
+         axis.text.x = element_text(angle=90, size = 10 ),
+         axis.title = element_text( size = 10, face = "bold" ),strip.text = element_text(size = 13, face = 'bold') ) +
+     geom_text(aes(label=round(emmean,2)), position=pd, vjust=0.05,hjust=0.5, size=3)+ theme(axis.text.x = element_text(  vjust = 0.5, hjust=1))+
+  geom_errorbar(aes(ymin=emmean-SE, ymax=emmean+SE), width=.2,
+                 position=position_dodge(.9)) +ggtitle("Estimated marginal means for irrigation (adjusted for density)")+geom_text(aes(label = .group, y = 5), vjust = -0.2, 
+            size = 3, position = position_dodge(width = 0.8))
+print(plot_lsmeans)
+
+
+
+# Estimated marginal means for row spacing (adjusted for density)
+emm_row <- emmeans(m1, ~ interrow_width, at = list(harvest_density_c = 0))
+print(emm_row)
+pairs(emm_row)
+emm_row=cld(emm_row, Letters = letters, adjust = "tukey")
+
+emm_row = as.data.frame(emm_row)
+
+plot_lsmeans=ggplot(emm_row,aes(reorder(interrow_width ,-emmean),emmean, fill=.group))+geom_bar(stat="identity")+xlab("Hybrid")+ylab(" LSMeans (Dry yield, t/ha)")+
+  #theme_classic() + 
+  theme( axis.text = element_text( size = 10 ),
+         axis.text.x = element_text(angle=90, size = 10 ),
+         axis.title = element_text( size = 10, face = "bold" ),strip.text = element_text(size = 13, face = 'bold') ) +
+     geom_text(aes(label=round(emmean,2)), position=pd, vjust=0.05,hjust=0.5, size=3)+ theme(axis.text.x = element_text(  vjust = 0.5, hjust=1))+
+  geom_errorbar(aes(ymin=emmean-SE, ymax=emmean+SE), width=.2,
+                 position=position_dodge(.9)) +ggtitle("Estimated marginal means for row spacing (adjusted for density)")+geom_text(aes(label = .group, y = 5), vjust = -0.2, 
+            size = 3, position = position_dodge(width = 0.8))
+print(plot_lsmeans)
+
+
+# Irrigation × Row spacing interaction
+emm_irrig_row <- emmeans(m1, ~ Irrigation * interrow_width, at = list(harvest_density_c = 0))
+print(emm_irrig_row)
+pairs(emm_irrig_row, by = "Irrigation")
+emm_irrig_row=cld(emm_irrig_row, Letters = letters, adjust = "tukey")
+
+emm_irrig_row = as.data.frame(emm_irrig_row)
+
+plot_lsmeans=ggplot(emm_irrig_row,aes(reorder(Irrigation ,-emmean),emmean, fill=.group))+geom_bar(stat="identity")+xlab("Hybrid")+ylab(" LSMeans (Dry yield, t/ha)")+
+  #theme_classic() + 
+  theme( axis.text = element_text( size = 10 ),
+         axis.text.x = element_text(angle=90, size = 10 ),
+         axis.title = element_text( size = 10, face = "bold" ),strip.text = element_text(size = 13, face = 'bold') ) + facet_wrap(~interrow_width)+
+     geom_text(aes(label=round(emmean,2)), position=pd, vjust=0.05,hjust=0.5, size=3)+ theme(axis.text.x = element_text(  vjust = 0.5, hjust=1))+
+  geom_errorbar(aes(ymin=emmean-SE, ymax=emmean+SE), width=.2,
+                 position=position_dodge(.9)) +ggtitle("Estimated marginal means for Irrigation × Row spacing interaction (adjusted for density)")+geom_text(aes(label = .group, y = 5), vjust = -0.2, 
+            size = 3, position = position_dodge(width = 0.8))
+print(plot_lsmeans)
+
+# ==========================================
+# 4. Hybrid Analysis
+# ==========================================
+
+# Get adjusted means for each hybrid
+emm_hybrid <- emmeans(m1, ~ Hybrid, at = list(harvest_density_c = 0))
+print(emm_hybrid)
+emm_hybrid=cld(emm_hybrid, Letters = letters, adjust = "tukey")
+
+emm_hybrid = as.data.frame(emm_hybrid)
+
+plot_lsmeans=ggplot(emm_hybrid,aes(reorder(Hybrid ,-emmean),emmean, fill=.group))+geom_bar(stat="identity")+xlab("Hybrid")+ylab(" LSMeans (Dry yield, t/ha)")+
+  #theme_classic() + 
+  theme( axis.text = element_text( size = 10 ),
+         axis.text.x = element_text(angle=90, size = 10 ),
+         axis.title = element_text( size = 10, face = "bold" ),strip.text = element_text(size = 13, face = 'bold') ) +
+     geom_text(aes(label=round(emmean,2)), position=pd, vjust=0.05,hjust=0.5, size=3)+ theme(axis.text.x = element_text(  vjust = 0.5, hjust=1))+
+  geom_errorbar(aes(ymin=emmean-SE, ymax=emmean+SE), width=.2,
+                 position=position_dodge(.9)) +ggtitle("Estimated marginal means for Hybrid (adjusted for density)")+geom_text(aes(label = .group, y = 5), vjust = -0.2, 
+            size = 3, position = position_dodge(width = 0.8))
+print(plot_lsmeans)
+
+
+
+# ==========================================
+# 5. Specific Treatment Combinations
+# ==========================================
+
+# Three-way interaction
+emm_all <- emmeans(m1, 
+                   ~ Irrigation * interrow_width * Hybrid, 
+                  at = list(harvest_density_c = 0))
+emm_all=cld(emm_all, Letters = letters, adjust = "tukey")
+
+# Plot top combinations
+plot_data <- as.data.frame(emm_all)
+plot_data$Treatment <- paste(plot_data$Irrigation, plot_data$interrow_width, "cm")
+
+
+
+
+plot_data = plot_data %>% unite(hybrid_irrigation_interrowwdith,Hybrid,Irrigation,interrow_width, sep="_",remove=F)
+
+
+
+```
+
+Hybrids:
+
+- DKC6808 vs EW6436XKLZ = DKC6836SC 
+- DKC6980 vs EW6846XKLZ = DKC7236SC 
+- DKC6625 vs EX6658XKLZ = DKC6648SC 
+- Isogenic: ET6641XKYZ compared to DKC6503  
+
+
+
+```{r echo=F, message=F, warning=F, fig.heigth=10, fig.width=10}
+plot_data = plot_data %>% mutate(hybrid_irrigation_rowspacing = ifelse(hybrid_irrigation_interrowwdith == "DKC6808_0.75_75","01_DKC6808_75%_75cm",ifelse(hybrid_irrigation_interrowwdith == "DKC6808_1_75","02_DKC6808_100%_75cm",ifelse(hybrid_irrigation_interrowwdith == "DKC6836SC_0.75_75","03_DKC6836SC_75%_75cm",ifelse(hybrid_irrigation_interrowwdith == "DKC6836SC_1_75","04_DKC6836SC_100%_75cm",ifelse(hybrid_irrigation_interrowwdith == "DKC6836SC(N)_0.75_40","05_DKC6836SC_75%_40cm",ifelse(hybrid_irrigation_interrowwdith == "DKC6836SC(N)_1_40","06_DKC6836SC_100%_40cm",ifelse(hybrid_irrigation_interrowwdith == "DKC6980_0.75_75","07_DKC6980_75%_75cm",ifelse(hybrid_irrigation_interrowwdith == "DKC6980_1_75","08_DKC6980_100%_75cm",ifelse(hybrid_irrigation_interrowwdith == "DKC7236SC_0.75_75","09_DKC7236SC_75%_75cm",ifelse(hybrid_irrigation_interrowwdith == "DKC7236SC_1_75","10_DKC7236SC_100%_75cm",ifelse(hybrid_irrigation_interrowwdith == "DKC7236SC(N)_0.75_40","11_DKC7236SC_75%_40cm",ifelse(hybrid_irrigation_interrowwdith == "DKC7236SC(N)_1_40","12_DKC7236SC_100%_40cm",ifelse(hybrid_irrigation_interrowwdith == "DKC6625_0.75_75","13_DKC6625_75%_75cm",ifelse(hybrid_irrigation_interrowwdith == "DKC6625_1_75","14_DKC6625_100%_75cm",ifelse(hybrid_irrigation_interrowwdith == "DKC6648SC_0.75_75","15_DKC6648SC_75%_75cm",ifelse(hybrid_irrigation_interrowwdith == "DKC6648SC_1_75","16_DKC6648SC_100%_75cm",ifelse(hybrid_irrigation_interrowwdith == "DKC6648SC(N)_0.75_40","17_DKC6648SC_75%_40cm",ifelse(hybrid_irrigation_interrowwdith == "DKC6648SC(N)_1_40","18_DKC6648SC_100%_40cm",ifelse(hybrid_irrigation_interrowwdith == "DKC6503_0.75_75","19_DKC6503_75%_75cm",ifelse(hybrid_irrigation_interrowwdith == "DKC6503_1_75","20_DKC6503_100%_75cm",ifelse(hybrid_irrigation_interrowwdith == "ET6641XYZ_0.75_75","21_ET6641XYZ:75%:75cm",ifelse(hybrid_irrigation_interrowwdith == "ET6641XYZ_1_75","22_ET6641XYZ:100%:75cm",ifelse(hybrid_irrigation_interrowwdith == "ET6641XYZ(N)_0.75_40","23_ET6641XYZ:75%:40cm",ifelse(hybrid_irrigation_interrowwdith == "ET6641XYZ(N)_1_40","24_ET6641XYZ:100%:40cm",hybrid_irrigation_interrowwdith)))))))))))))))))))))))))
+
+plot_data = plot_data %>% mutate(rm_check = ifelse(Hybrid %in% c("DKC6808","DKC6836SC","DKC6836SC(N)"),"rm_check_1",ifelse(Hybrid %in% c("DKC6980","DKC7236SC","DKC7236SC(N)"),"rm_check_2",ifelse(Hybrid %in% c("DKC6625","DKC6648SC","DKC6648SC(N)"),"rm_check_3","rm_check_4"))))
+
+#lsmeans_1 = lsmeans_1 %>% mutate(hybrid_name = ifelse(Hybrid %in% c("75:100:DKC6808","75:75:DKC6808","75:100:DKC6836","75:75:DKC6836","40:100:DKC6836","40:75:DKC6836"),"rm_check_1",ifelse(hybrid__Target_density %in% c("75:100:DKC6980","75:75:DKC6980","75:100:DKC7236","75:75:DKC7236","40:100:DKC7236","40:75:DKC7236"),"rm_check_2",ifelse(hybrid__Target_density %in% c("75:100:DKC6625","75:75:DKC6625","75:100:DKC6648","75:75:DKC6648","40:100:DKC6648","40:75:DKC6648"),"rm_check_3","rm_check_4"))))
+
+
+plot_data = plot_data %>% unite(hybrid__interrow_cm_plot,Hybrid,interrow_width, sep="_",remove=F)
+
+plot_lsmeans=ggplot(plot_data,aes(reorder(hybrid_irrigation_rowspacing,-emmean),emmean, fill=Irrigation))+geom_bar(stat="identity")+xlab("Hybrid_irrigation(%)_interrowwdith(cm)")+ylab(" LSMeans Dry yield (t/ha)")+
+  #theme_classic() + 
+  theme( axis.text = element_text( size = 10 ),
+         axis.text.x = element_text(angle=90, size = 10 ),
+         axis.title = element_text( size = 10, face = "bold" ),strip.text = element_text(size = 13, face = 'bold') ) +
+     geom_text(aes(label=round(emmean,2)), position=pd, vjust=0.05,hjust=0.5, size=3)+ theme(axis.text.x = element_text(  vjust = 0.5, hjust=1))+
+  geom_errorbar(aes(ymin=emmean-SE, ymax=emmean+SE), width=.2,
+                 position=position_dodge(.9)) 
+#+geom_text(aes(label = .group, y = 5, group = Hybrid), vjust = -0.2, 
+           # size = 3, position = position_dodge(width = 0.8))
+print(plot_lsmeans)
+
+plot_lsmeans=ggplot(plot_data,aes(hybrid_irrigation_rowspacing,emmean, fill=.group))+geom_bar(stat="identity")+xlab("Hybrid_irrigation(%)_interrowwdith(cm)")+ylab(" LSMeans Dry yield (t/ha)")+
+  #theme_classic() + 
+  theme( axis.text = element_text( size = 10 ),
+         axis.text.x = element_text(angle=90, size = 10 ),
+         axis.title = element_text( size = 10, face = "bold" ),strip.text = element_text(size = 13, face = 'bold') ) +
+     geom_text(aes(label=round(emmean,2)), position=pd, vjust=0.05,hjust=0.5, size=3)+ theme(axis.text.x = element_text(  vjust = 0.5, hjust=1))+
+  geom_errorbar(aes(ymin=emmean-SE, ymax=emmean+SE), width=.2,
+                 position=position_dodge(.9)) 
+#+geom_text(aes(label = .group, y = 5, group = Hybrid), vjust = -0.2, 
+           # size = 3, position = position_dodge(width = 0.8))
+print(plot_lsmeans)
+
+
+
+
+
+# plot_lsmeans=ggplot(plot_data,aes(reorder(Treatment ,-emmean),emmean, fill=.group))+geom_bar(stat="identity")+xlab("Irrigation - Inter row width (cm)")+ylab(" LSMeans (Dry yield, t/ha)")+
+#   #theme_classic() + 
+#   theme( axis.text = element_text( size = 10 ),
+#          axis.text.x = element_text(angle=90, size = 10 ),
+#          axis.title = element_text( size = 10, face = "bold" ),strip.text = element_text(size = 13, face = 'bold') ) +
+#      geom_text(aes(label=round(emmean,2)), position=pd, vjust=0.05,hjust=0.5, size=3)+ theme(axis.text.x = element_text(  vjust = 0.5, hjust=1))+
+#   geom_errorbar(aes(ymin=emmean-SE, ymax=emmean+SE), width=.2,
+#                  position=position_dodge(.9)) +ggtitle("Estimated marginal means for Hybrid (adjusted for density)")+geom_text(aes(label = .group, y = 5), vjust = -0.2, 
+#             size = 3, position = position_dodge(width = 0.8))+ facet_wrap(~Hybrid, scales="free_x")
+# print(plot_lsmeans)
+
+```
+
+```{r echo=F, message=F, warning=F, fig.heigth=10, fig.width=15}
+plot_lsmeans=ggplot(plot_data,aes(hybrid_irrigation_rowspacing,emmean, fill=Irrigation))+geom_bar(stat="identity")+xlab("Hybrid_irrigation(%)_interrowwdith(cm)")+ylab(" LSMeans (Dry yield (t/ha))")+
+  #theme_classic() + 
+  theme( axis.text = element_text( size = 10 ),
+         axis.text.x = element_text(angle=90, size = 10 ),
+         axis.title = element_text( size = 10, face = "bold" ),strip.text = element_text(size = 13, face = 'bold') ) +
+     geom_text(aes(label=round(emmean,2)), position=pd, vjust=0.05,hjust=0.5, size=3)+ theme(axis.text.x = element_text(  vjust = 0.5, hjust=1))+
+  geom_errorbar(aes(ymin=emmean-SE, ymax=emmean+SE), width=.2,
+                 position=position_dodge(.9)) +geom_text(aes(label = .group, y = 2, group = hybrid_irrigation_rowspacing), vjust = -0.2, 
+            size = 3, position = position_dodge(width = 0.8))+facet_grid(~rm_check, scales="free_x")
+
+#+facet_grid(~Hybrid, scales="free_x")
+print(plot_lsmeans)
+```
+
+
+# Exploratory analysis 2024 season - Yield vs Density 
+
+
+```{r echo=F, message=F, warning=F, fig.width=16, fig.height=7}
+# Load required packages
+library(readxl)
+library(lme4)
+library(lmerTest)
+library(emmeans)
+library(car)
+library(ggplot2)
+library(dplyr)
+
+# Import data (assuming it's in a csv file)
+# For the code example, I'll use the provided dataset
+ssc_data = read_excel("/mnt/data/SSC_2025_water_Naha.xlsx", sheet = 2)
+
+names(ssc_data)[9] = "target_density"
+names(ssc_data)[10] = "interrow_width"
+names(ssc_data)[15] = "harvest_density"
+names(ssc_data)[20] = "dry_yield"
+
+ssc_data = filter(ssc_data, Year==2024)
+
+#renaming hybrids
+#ssc_data = ssc_data %>% mutate(Hybrid  = ifelse(Hybrid %in% c("DKC6836SC(N)", "DKC6836SC_40cm"),"DKC6836SC",ifelse(Hybrid %in% c("DKC7236SC(N)", "DKC7236SC_40cm"),"DKC7236SC",ifelse(Hybrid %in% c( "ET6641XYZ(N)", "ET6641SC_40cm","ET6641SC"),"ET6641XYZ",ifelse(Hybrid %in% c( "DKC6648SC_40cm", "DKC6648SC","DKC6648SC(N)"),"DKC6648SC",Hybrid)))))
+
+
+# Examine data structure
+
+data=ssc_data
+# Convert categorical variables to factors
+data$Hybrid <- as.factor(data$Hybrid)
+data$Irrigation <- as.factor(data$Irrigation)
+data$interrow_width <- as.factor(data$interrow_width)
+data$Replicates <- as.factor(data$Replicates)
+data$Range <- as.factor(data$Range)
+
+# Create hybrid type variable for analysis
+data$hybrid_type <- ifelse(grepl("SC", data$Hybrid), "SC", "Tall")
+data$hybrid_type <- ifelse(grepl("XYZ", data$Hybrid), "SC", data$hybrid_type)
+data$hybrid_type <- as.factor(data$hybrid_type)
+
+
+# Look at the relationship between harvest density and yield
+ggplot(data, aes(x = harvest_density, y = dry_yield, color = Irrigation)) +
+  geom_point(alpha = 0.7) +
+  geom_smooth(method = "lm", se = FALSE) +
+  facet_grid(interrow_width ~ hybrid_type) +
+  labs(title = "Yield vs Harvest Density",
+       x = "Harvest Density (plants/ha)",
+       y = "Dry Yield (t/ha)")+
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+
+
+ggplot(data, aes(x = harvest_density, y = dry_yield, color = Irrigation)) +
+  geom_point(alpha = 0.7) +
+  geom_smooth(method = "lm", se = FALSE) +
+  facet_grid(interrow_width ~ Hybrid) +
+  labs(title = "Yield vs Harvest Density",
+       x = "Harvest Density (plants/ha)",
+       y = "Dry Yield (t/ha)") +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+
+
+```
+
+# Statistical analysis - 2024 season
+
+
+## Testing for density impact
+
+### Model 1: Density as a covariate
+
+- Harvest density values were normalized for better interpretation in models
+
+```{r, eval=F}
+m1 <- lmer(dry_yield ~ Irrigation * interrow_width * Hybrid + harvest_density_c +
+             (1|Field/Replicates) +                    # Block effect
+             (1|Field/Replicates:Irrigation) +         # Main plot error (irrigation)
+             (1|Field/Replicates:Irrigation:interrow_width),  # Sub-plot error
+           data = data)
+```
+
+
+```{r echo=F, message=F, warning=F}
+# Center harvest density for better interpretation in models
+data$harvest_density_c <- scale(data$harvest_density, center = TRUE, scale = FALSE)[,1]
+
+# First fit a full model to assess density effects
+# Using split-split plot design structure with proper error terms
+m1 <- lmer(dry_yield ~ Irrigation * interrow_width * Hybrid + harvest_density_c +
+             (1|Field/Replicates) +                    # Block effect
+             (1|Field/Replicates:Irrigation) +         # Main plot error (irrigation)
+             (1|Field/Replicates:Irrigation:interrow_width),  # Sub-plot error
+           data = data)
+
+# Check model assumptions
+qqnorm(resid(m1))
+qqline(resid(m1))
+plot(m1)
+Anova(m1, type = 2)
+```
+
+
+###  Model 2 :-  Density as part of the interaction term to test if desity interacts with other treatments
+
+```{r, eval=F}
+m2 <- lmer(dry_yield ~ (Irrigation * interrow_width * Hybrid) * harvest_density_c +
+             (1|Field/Replicates) +
+             (1|Field/Replicates:Irrigation) +
+             (1|Field/Replicates:Irrigation:interrow_width),
+           data = data)
+```
+
+
+```{r echo=F, message=F, warning=F}
+# Test if density interacts with treatments
+m2 <- lmer(dry_yield ~ (Irrigation * interrow_width * Hybrid) * harvest_density_c +
+             (1|Field/Replicates) +
+             (1|Field/Replicates:Irrigation) +
+             (1|Field/Replicates:Irrigation:interrow_width),
+           data = data)
+
+# Check model assumptions
+qqnorm(resid(m2))
+qqline(resid(m2))
+plot(m2)
+Anova(m2, type = 2)
+```
+
+### Model 3 :-  Simpler model with just density as the only factor
+
+```{r eval=F}
+# Model with only density
+m_density <- lmer(dry_yield ~ harvest_density_c +
+                    (1|Field/Replicates) +
+                    (1|Field/Replicates:Irrigation) +
+                    (1|Field/Replicates:Irrigation:interrow_width),
+                  data = data)
+# Check model assumptions
+qqnorm(resid(m_density))
+qqline(resid(m_density))
+plot(m_density)
+Anova(m_density, type = 2)
+```
+
+
+```{r echo=F, message=F, warning=F}
+# Model with only density
+m_density <- lmer(dry_yield ~ harvest_density_c +
+                    (1|Field/Replicates) +
+                    (1|Field/Replicates:Irrigation) +
+                    (1|Field/Replicates:Irrigation:interrow_width),
+                  data = data)
+# Check model assumptions
+qqnorm(resid(m_density))
+qqline(resid(m_density))
+plot(m_density)
+Anova(m_density, type = 2)
+```
+
+
+### Compare 3 models
+
+```{r echo=F, message=F, warning=F}
+
+
+# Test significance of density effect
+#summary(m1)
+
+
+# Compare models to see if density interactions are significant
+anova(m1, m2,m_density)
+
+# ==========================================
+# 2. Main Analysis: Irrigation × Inter-row Width × Hybrid effects
+# ==========================================
+
+# Use the simpler model if density interactions are not significant
+# (based on previous test)
+
+# Get Type III ANOVA to test main effects and interactions
+
+
+# Extract coefficient for density effect
+summary(m1)
+coef_summary <- summary(m1)$coefficients
+density_effect <- coef_summary["harvest_density_c", "Estimate"]
+density_p <- coef_summary["harvest_density_c", "Pr(>|t|)"]
+
+cat("Yield change per 1000 plants/ha:", density_effect * 1000, "t/ha, p =", density_p, "\n")
+
+
+```
+
+### Quantifying variance explanation using R2 values - Density vs Full model
+
+```{r echo=F, message=F, warning=F}
+
+# Model with only density
+m_density <- lmer(dry_yield ~ harvest_density_c +
+                    (1|Field/Replicates) +
+                    (1|Field/Replicates:Irrigation) +
+                    (1|Field/Replicates:Irrigation:interrow_width),
+                  data = data)
+
+# Calculate R-squared for density-only model
+r2_density <- performance::r2(m_density)
+
+# Calculate R-squared for full model
+r2_full <- performance::r2(m1)
+
+cat("Variance explained by density alone:", r2_density$R2_marginal, "\n")
+cat("Total variance explained by full model:", r2_full$R2_marginal, "\n")
+cat("Additional variance explained by treatments:", 
+    r2_full$R2_marginal - r2_density$R2_marginal, "\n")
+
+# # Calculate density effect size
+# density_sd <- sd(data$harvest_density)
+# density_range <- range(data$harvest_density)
+# density_range_effect <- diff(density_range) * density_effect
+# 
+# # Calculate treatment effect ranges
+# # Extract predictions across all treatment combinations
+# grid <- expand.grid(
+#   Irrigation = levels(data$Irrigation),
+#   interrow_width = levels(data$interrow_width),
+#   Hybrid = levels(data$Hybrid)[1:8],  # Using first 8 hybrids for clarity
+#   harvest_density_c = 0
+# )
+# 
+# # Predict values
+# predictions <- predict(m1, newdata = grid, re.form = NA)
+# grid$predicted <- predictions
+# 
+# # Calculate ranges by factor
+# irrig_range <- tapply(grid$predicted, grid$Irrigation, mean)
+# irrig_effect_magnitude <- max(irrig_range) - min(irrig_range)
+# 
+# row_range <- tapply(grid$predicted, grid$interrow_width, mean)
+# row_effect_magnitude <- max(row_range) - min(row_range)
+# 
+# hybrid_range <- tapply(grid$predicted, grid$Hybrid, mean)
+# hybrid_effect_magnitude <- max(hybrid_range) - min(hybrid_range)
+# 
+# # Compare magnitudes
+# effect_magnitudes <- data.frame(
+#   Factor = c("Plant Density (full range)", 
+#              "Irrigation (100% vs 75%)", 
+#              "Row Spacing (75cm vs 40cm)",
+#              "Hybrid (best vs worst)"),
+#   Magnitude = c(density_range_effect, 
+#                 irrig_effect_magnitude, 
+#                 row_effect_magnitude, 
+#                 hybrid_effect_magnitude)
+# )
+# 
+# ggplot(effect_magnitudes, aes(x = reorder(Factor, Magnitude), y = Magnitude)) +
+#   geom_bar(stat = "identity", fill = "darkgreen") +
+#   coord_flip() +
+#   labs(title = "Magnitude of effects on yield (t/ha)",
+#        subtitle = "Comparing observed ranges of each factor",
+#        x = "", y = "Effect on yield (t/ha)")
+```
+
+### Treatment Means - After Adjustmust for Density
+
+- Estimated marginal means for irrigation (adjusted for density)
+
+- Estimated marginal means for row spacing (adjusted for density)
+
+- Irrigation × Row spacing interaction
+
+- Hybrid Analysis
+
+- Irrigation * interrow_width * Hybrid interaction
+
+```{r echo=F, message=F, warning=F}
+# ==========================================
+# 3. Treatment Means Adjusted for Density
+# ==========================================
+
+# Estimated marginal means for irrigation (adjusted for density)
+emm_irrig <- emmeans(m1, ~ Irrigation, at = list(harvest_density_c = 0))
+print(emm_irrig)
+pairs(emm_irrig)
+emm_irrig= cld(emm_irrig, Letters = letters, adjust = "tukey")
+emm_irrig = as.data.frame(emm_irrig)
+pd <- position_dodge(0.1)
+plot_lsmeans=ggplot(emm_irrig,aes(reorder(Irrigation ,-emmean),emmean, fill=.group))+geom_bar(stat="identity")+xlab("Hybrid")+ylab(" LSMeans (Dry yield, t/ha)")+
+  #theme_classic() + 
+  theme( axis.text = element_text( size = 10 ),
+         axis.text.x = element_text(angle=90, size = 10 ),
+         axis.title = element_text( size = 10, face = "bold" ),strip.text = element_text(size = 13, face = 'bold') ) +
+     geom_text(aes(label=round(emmean,2)), position=pd, vjust=0.05,hjust=0.5, size=3)+ theme(axis.text.x = element_text(  vjust = 0.5, hjust=1))+
+  geom_errorbar(aes(ymin=emmean-SE, ymax=emmean+SE), width=.2,
+                 position=position_dodge(.9)) +ggtitle("Estimated marginal means for irrigation (adjusted for density)")+geom_text(aes(label = .group, y = 5), vjust = -0.2, 
+            size = 3, position = position_dodge(width = 0.8))
+print(plot_lsmeans)
+
+
+
+# Estimated marginal means for row spacing (adjusted for density)
+emm_row <- emmeans(m1, ~ interrow_width, at = list(harvest_density_c = 0))
+print(emm_row)
+pairs(emm_row)
+emm_row=cld(emm_row, Letters = letters, adjust = "tukey")
+
+emm_row = as.data.frame(emm_row)
+
+plot_lsmeans=ggplot(emm_row,aes(reorder(interrow_width ,-emmean),emmean, fill=.group))+geom_bar(stat="identity")+xlab("Hybrid")+ylab(" LSMeans (Dry yield, t/ha)")+
+  #theme_classic() + 
+  theme( axis.text = element_text( size = 10 ),
+         axis.text.x = element_text(angle=90, size = 10 ),
+         axis.title = element_text( size = 10, face = "bold" ),strip.text = element_text(size = 13, face = 'bold') ) +
+     geom_text(aes(label=round(emmean,2)), position=pd, vjust=0.05,hjust=0.5, size=3)+ theme(axis.text.x = element_text(  vjust = 0.5, hjust=1))+
+  geom_errorbar(aes(ymin=emmean-SE, ymax=emmean+SE), width=.2,
+                 position=position_dodge(.9)) +ggtitle("Estimated marginal means for row spacing (adjusted for density)")+geom_text(aes(label = .group, y = 5), vjust = -0.2, 
+            size = 3, position = position_dodge(width = 0.8))
+print(plot_lsmeans)
+
+
+# Irrigation × Row spacing interaction
+emm_irrig_row <- emmeans(m1, ~ Irrigation * interrow_width, at = list(harvest_density_c = 0))
+print(emm_irrig_row)
+pairs(emm_irrig_row, by = "Irrigation")
+emm_irrig_row=cld(emm_irrig_row, Letters = letters, adjust = "tukey")
+
+emm_irrig_row = as.data.frame(emm_irrig_row)
+
+plot_lsmeans=ggplot(emm_irrig_row,aes(reorder(Irrigation ,-emmean),emmean, fill=.group))+geom_bar(stat="identity")+xlab("Hybrid")+ylab(" LSMeans (Dry yield, t/ha)")+
+  #theme_classic() + 
+  theme( axis.text = element_text( size = 10 ),
+         axis.text.x = element_text(angle=90, size = 10 ),
+         axis.title = element_text( size = 10, face = "bold" ),strip.text = element_text(size = 13, face = 'bold') ) + facet_wrap(~interrow_width)+
+     geom_text(aes(label=round(emmean,2)), position=pd, vjust=0.05,hjust=0.5, size=3)+ theme(axis.text.x = element_text(  vjust = 0.5, hjust=1))+
+  geom_errorbar(aes(ymin=emmean-SE, ymax=emmean+SE), width=.2,
+                 position=position_dodge(.9)) +ggtitle("Estimated marginal means for Irrigation × Row spacing interaction (adjusted for density)")+geom_text(aes(label = .group, y = 5), vjust = -0.2, 
+            size = 3, position = position_dodge(width = 0.8))
+print(plot_lsmeans)
+
+# ==========================================
+# 4. Hybrid Analysis
+# ==========================================
+
+# Get adjusted means for each hybrid
+emm_hybrid <- emmeans(m1, ~ Hybrid, at = list(harvest_density_c = 0))
+print(emm_hybrid)
+emm_hybrid=cld(emm_hybrid, Letters = letters, adjust = "tukey")
+
+emm_hybrid = as.data.frame(emm_hybrid)
+
+plot_lsmeans=ggplot(emm_hybrid,aes(reorder(Hybrid ,-emmean),emmean, fill=.group))+geom_bar(stat="identity")+xlab("Hybrid")+ylab(" LSMeans (Dry yield, t/ha)")+
+  #theme_classic() + 
+  theme( axis.text = element_text( size = 10 ),
+         axis.text.x = element_text(angle=90, size = 10 ),
+         axis.title = element_text( size = 10, face = "bold" ),strip.text = element_text(size = 13, face = 'bold') ) +
+     geom_text(aes(label=round(emmean,2)), position=pd, vjust=0.05,hjust=0.5, size=3)+ theme(axis.text.x = element_text(  vjust = 0.5, hjust=1))+
+  geom_errorbar(aes(ymin=emmean-SE, ymax=emmean+SE), width=.2,
+                 position=position_dodge(.9)) +ggtitle("Estimated marginal means for Hybrid (adjusted for density)")+geom_text(aes(label = .group, y = 5), vjust = -0.2, 
+            size = 3, position = position_dodge(width = 0.8))
+print(plot_lsmeans)
+
+
+
+# ==========================================
+# 5. Specific Treatment Combinations
+# ==========================================
+
+# Three-way interaction
+emm_all <- emmeans(m1, 
+                   ~ Irrigation * interrow_width * Hybrid, 
+                  at = list(harvest_density_c = 0))
+emm_all=cld(emm_all, Letters = letters, adjust = "tukey")
+
+# Plot top combinations
+plot_data <- as.data.frame(emm_all)
+plot_data$Treatment <- paste(plot_data$Irrigation, plot_data$interrow_width, "cm")
+
+
+
+
+plot_data = plot_data %>% unite(hybrid_irrigation_interrowwdith,Hybrid,Irrigation,interrow_width, sep="_",remove=F)
+
+
+
+```
+
+Hybrids:
+
+- DKC6808 vs EW6436XKLZ = DKC6836SC 
+- DKC6980 vs EW6846XKLZ = DKC7236SC 
+- DKC6625 vs EX6658XKLZ = DKC6648SC 
+- Isogenic: ET6641XKYZ compared to DKC6503  
+
+
+
+```{r echo=F, message=F, warning=F, fig.heigth=10, fig.width=10}
+plot_data = plot_data %>% mutate(hybrid_irrigation_rowspacing = ifelse(hybrid_irrigation_interrowwdith == "DKC6808_75_75","01_DKC6808_75%_75cm",ifelse(hybrid_irrigation_interrowwdith == "DKC6808_100_75","02_DKC6808_100%_75cm",ifelse(hybrid_irrigation_interrowwdith == "DKC6836SC_75_75","03_DKC6836SC_75%_75cm",ifelse(hybrid_irrigation_interrowwdith == "DKC6836SC_100_75","04_DKC6836SC_100%_75cm",ifelse(hybrid_irrigation_interrowwdith == "DKC6836SC_40cm_75_40","05_DKC6836SC_75%_40cm",ifelse(hybrid_irrigation_interrowwdith == "DKC6836SC_40cm_100_40","06_DKC6836SC_100%_40cm",ifelse(hybrid_irrigation_interrowwdith == "DKC6980_75_75","07_DKC6980_75%_75cm",ifelse(hybrid_irrigation_interrowwdith == "DKC6980_100_75","08_DKC6980_100%_75cm",ifelse(hybrid_irrigation_interrowwdith == "DKC7236SC_75_75","09_DKC7236SC_75%_75cm",ifelse(hybrid_irrigation_interrowwdith == "DKC7236SC_100_75","10_DKC7236SC_100%_75cm",ifelse(hybrid_irrigation_interrowwdith == "DKC7236SC_40cm_75_40","11_DKC7236SC_75%_40cm",ifelse(hybrid_irrigation_interrowwdith == "DKC7236SC_40cm_100_40","12_DKC7236SC_100%_40cm",ifelse(hybrid_irrigation_interrowwdith == "DKC6625_75_75","13_DKC6625_75%_75cm",ifelse(hybrid_irrigation_interrowwdith == "DKC6625_100_75","14_DKC6625_100%_75cm",ifelse(hybrid_irrigation_interrowwdith == "DKC6648SC_75_75","15_DKC6648SC_75%_75cm",ifelse(hybrid_irrigation_interrowwdith == "DKC6648SC_100_75","16_DKC6648SC_100%_75cm",ifelse(hybrid_irrigation_interrowwdith == "DKC6648SC_40cm_75_40","17_DKC6648SC_75%_40cm",ifelse(hybrid_irrigation_interrowwdith == "DKC6648SC_40cm_100_40","18_DKC6648SC_100%_40cm",ifelse(hybrid_irrigation_interrowwdith == "DKC6503_75_75","19_DKC6503_75%_75cm",ifelse(hybrid_irrigation_interrowwdith == "DKC6503_100_75","20_DKC6503_100%_75cm",ifelse(hybrid_irrigation_interrowwdith == "ET6641SC_75_75","21_ET6641XYZ:75%:75cm",ifelse(hybrid_irrigation_interrowwdith == "ET6641SC_100_75","22_ET6641XYZ:100%:75cm",ifelse(hybrid_irrigation_interrowwdith == "ET6641SC_40cm_75_40","23_ET6641XYZ:75%:40cm",ifelse(hybrid_irrigation_interrowwdith == "ET6641SC_40cm_100_40","24_ET6641XYZ:100%:40cm",hybrid_irrigation_interrowwdith)))))))))))))))))))))))))
+
+plot_data = plot_data %>% mutate(rm_check = ifelse(Hybrid %in% c("DKC6808","DKC6836SC","DKC6836SC(N)","DKC6836SC_40cm"),"rm_check_1",ifelse(Hybrid %in% c("DKC6980","DKC7236SC","DKC7236SC(N)","DKC7236SC_40cm"),"rm_check_2",ifelse(Hybrid %in% c("DKC6625","DKC6648SC","DKC6648SC(N)","DKC6648SC_40cm"),"rm_check_3","rm_check_4"))))
+
+#lsmeans_1 = lsmeans_1 %>% mutate(hybrid_name = ifelse(Hybrid %in% c("75:100:DKC6808","75:75:DKC6808","75:100:DKC6836","75:75:DKC6836","40:100:DKC6836","40:75:DKC6836"),"rm_check_1",ifelse(hybrid__Target_density %in% c("75:100:DKC6980","75:75:DKC6980","75:100:DKC7236","75:75:DKC7236","40:100:DKC7236","40:75:DKC7236"),"rm_check_2",ifelse(hybrid__Target_density %in% c("75:100:DKC6625","75:75:DKC6625","75:100:DKC6648","75:75:DKC6648","40:100:DKC6648","40:75:DKC6648"),"rm_check_3","rm_check_4"))))
+
+
+plot_data = plot_data %>% unite(hybrid__interrow_cm_plot,Hybrid,interrow_width, sep="_",remove=F)
+
+plot_lsmeans=ggplot(plot_data,aes(reorder(hybrid_irrigation_rowspacing,-emmean),emmean, fill=Irrigation))+geom_bar(stat="identity")+xlab("Hybrid_irrigation(%)_interrowwdith(cm)")+ylab(" LSMeans Dry yield (t/ha)")+
+  #theme_classic() + 
+  theme( axis.text = element_text( size = 10 ),
+         axis.text.x = element_text(angle=90, size = 10 ),
+         axis.title = element_text( size = 10, face = "bold" ),strip.text = element_text(size = 13, face = 'bold') ) +
+     geom_text(aes(label=round(emmean,2)), position=pd, vjust=0.05,hjust=0.5, size=3)+ theme(axis.text.x = element_text(  vjust = 0.5, hjust=1))+
+  geom_errorbar(aes(ymin=emmean-SE, ymax=emmean+SE), width=.2,
+                 position=position_dodge(.9)) 
+#+geom_text(aes(label = .group, y = 5, group = Hybrid), vjust = -0.2, 
+           # size = 3, position = position_dodge(width = 0.8))
+print(plot_lsmeans)
+
+plot_lsmeans=ggplot(plot_data,aes(hybrid_irrigation_rowspacing,emmean, fill=.group))+geom_bar(stat="identity")+xlab("Hybrid_irrigation(%)_interrowwdith(cm)")+ylab(" LSMeans Dry yield (t/ha)")+
+  #theme_classic() + 
+  theme( axis.text = element_text( size = 10 ),
+         axis.text.x = element_text(angle=90, size = 10 ),
+         axis.title = element_text( size = 10, face = "bold" ),strip.text = element_text(size = 13, face = 'bold') ) +
+     geom_text(aes(label=round(emmean,2)), position=pd, vjust=0.05,hjust=0.5, size=3)+ theme(axis.text.x = element_text(  vjust = 0.5, hjust=1))+
+  geom_errorbar(aes(ymin=emmean-SE, ymax=emmean+SE), width=.2,
+                 position=position_dodge(.9)) 
+#+geom_text(aes(label = .group, y = 5, group = Hybrid), vjust = -0.2, 
+           # size = 3, position = position_dodge(width = 0.8))
+print(plot_lsmeans)
+
+
+
+
+
+# plot_lsmeans=ggplot(plot_data,aes(reorder(Treatment ,-emmean),emmean, fill=.group))+geom_bar(stat="identity")+xlab("Irrigation - Inter row width (cm)")+ylab(" LSMeans (Dry yield, t/ha)")+
+#   #theme_classic() + 
+#   theme( axis.text = element_text( size = 10 ),
+#          axis.text.x = element_text(angle=90, size = 10 ),
+#          axis.title = element_text( size = 10, face = "bold" ),strip.text = element_text(size = 13, face = 'bold') ) +
+#      geom_text(aes(label=round(emmean,2)), position=pd, vjust=0.05,hjust=0.5, size=3)+ theme(axis.text.x = element_text(  vjust = 0.5, hjust=1))+
+#   geom_errorbar(aes(ymin=emmean-SE, ymax=emmean+SE), width=.2,
+#                  position=position_dodge(.9)) +ggtitle("Estimated marginal means for Hybrid (adjusted for density)")+geom_text(aes(label = .group, y = 5), vjust = -0.2, 
+#             size = 3, position = position_dodge(width = 0.8))+ facet_wrap(~Hybrid, scales="free_x")
+# print(plot_lsmeans)
+
+```
+
+```{r echo=F, message=F, warning=F, fig.heigth=10, fig.width=15}
+plot_lsmeans=ggplot(plot_data,aes(hybrid_irrigation_rowspacing,emmean, fill=Irrigation))+geom_bar(stat="identity")+xlab("Hybrid_irrigation(%)_interrowwdith(cm)")+ylab(" LSMeans (Dry yield (t/ha))")+
+  #theme_classic() + 
+  theme( axis.text = element_text( size = 10 ),
+         axis.text.x = element_text(angle=90, size = 10 ),
+         axis.title = element_text( size = 10, face = "bold" ),strip.text = element_text(size = 13, face = 'bold') ) +
+     geom_text(aes(label=round(emmean,2)), position=pd, vjust=0.05,hjust=0.5, size=3)+ theme(axis.text.x = element_text(  vjust = 0.5, hjust=1))+
+  geom_errorbar(aes(ymin=emmean-SE, ymax=emmean+SE), width=.2,
+                 position=position_dodge(.9)) +geom_text(aes(label = .group, y = 2, group = hybrid_irrigation_rowspacing), vjust = -0.2, 
+            size = 3, position = position_dodge(width = 0.8))+facet_grid(~rm_check, scales="free_x")
+
+#+facet_grid(~Hybrid, scales="free_x")
+print(plot_lsmeans)
+```
+
+# Statistical analysis using 2024 and 2025 data
+
+```{r echo=F, message=F, warning=F}
+
+ssc_data_1 = read_excel("/mnt/data/SSC_2025_water_Naha.xlsx", sheet = 2)
+
+names(ssc_data_1)[9] = "target_density"
+names(ssc_data_1)[10] = "interrow_width"
+names(ssc_data_1)[15] = "harvest_density"
+names(ssc_data_1)[20] = "dry_yield"
+
+#ssc_data_1 = ssc_data_1 %>% mutate(Hybrid  = ifelse(Hybrid %in% c("DKC6836SC(N)", "DKC6836SC_40cm"),"DKC6836SC(N)",ifelse(Hybrid %in% c("DKC7236SC(N)", "DKC7236SC_40cm"),"DKC7236SC(N)",ifelse(Hybrid %in% c( "ET6641XYZ(N)", "ET6641SC_40cm","ET6641SC"),"ET6641XYZ(N)",ifelse(Hybrid %in% c( "DKC6648SC_40cm", "DKC6648SC","DKC6648SC(N)"),"DKC6648SC(N)",Hybrid)))))
+
+ssc_data_1 = ssc_data_1 %>% mutate(Hybrid  = ifelse(Hybrid %in% c("DKC6836SC(N)", "DKC6836SC_40cm"),"DKC6836SC",ifelse(Hybrid %in% c("DKC7236SC(N)", "DKC7236SC_40cm"),"DKC7236SC",ifelse(Hybrid %in% c( "ET6641XYZ(N)", "ET6641SC_40cm","ET6641SC"),"ET6641XYZ",ifelse(Hybrid %in% c( "DKC6648SC_40cm", "DKC6648SC","DKC6648SC(N)"),"DKC6648SC",Hybrid)))))
+
+ssc_hybrids = c("EW6846XKL1" ,"EW6015XKL1","EW6436XKL1","EW6650XKP1","EW6526XKL1","EW6846","EW6436","DKC6836SC","DKC7236SC","ET6641SC","DKC6648SC","ET6641XYZ") 
+ssc_data_1 = ssc_data_1 %>% mutate(hybrid_type = ifelse(Hybrid %in% ssc_hybrids, "ssc","tall"))
+
+
+ssc_data_1 = ssc_data_1 %>% mutate(Irrigation  = ifelse(Irrigation %in% c(1.00, 100.00),1,ifelse(Irrigation %in% c(0.75, 75.00),0.75,NA)))
+
+ssc_data_1$Irrigation = as.factor(ssc_data_1$Irrigation)
+
+ssc_data_1 = ssc_data_1 %>% unite(hybrid_irrigation_interrowwdith,Hybrid,Irrigation,interrow_width, sep="_",remove=F)
+
+ssc_data_1 = filter(ssc_data_1, !hybrid_irrigation_interrowwdith %in% c("ET6641XYZ(N)_1_75","ET6641XYZ(N)_0.75_75"))
+
+```
+
+
+
+
+```{r echo=F, message=F, warning=F}
+# Center harvest density for better interpretation in models
+data = ssc_data_1
+data$harvest_density_c <- scale(data$harvest_density, center = TRUE, scale = FALSE)[,1]
+
+# First fit a full model to assess density effects
+# Using split-split plot design structure with proper error terms
+model <- lmer(dry_yield ~ as.factor(Irrigation) * as.factor(interrow_width) * as.factor(Hybrid)  +harvest_density_c+
+             (1|Field/Replicates) +                    # Block effect
+             (1|Field/Replicates:Irrigation) +         # Main plot error (irrigation)
+             (1|Field/Replicates:Irrigation:interrow_width),  # Sub-plot error
+           data = data)
+
+# Check model assumptions
+qqnorm(resid(model))
+qqline(resid(model))
+plot(model)
+Anova(model, type = 3)
+```
+
+### Treatment Means - After Adjustmust for Density
+
+- Estimated marginal means for irrigation (adjusted for density)
+
+- Estimated marginal means for row spacing (adjusted for density)
+
+- Irrigation × Row spacing interaction
+
+- Hybrid Analysis
+
+- Irrigation * interrow_width * Hybrid interaction
+
+```{r echo=F, message=F, warning=F}
+# ==========================================
+# 3. Treatment Means Adjusted for Density
+# ==========================================
+
+# Estimated marginal means for irrigation (adjusted for density)
+emm_irrig <- emmeans(model, ~ Irrigation, at = list(harvest_density_c = 0))
+#print(emm_irrig)
+#pairs(emm_irrig)
+emm_irrig= cld(emm_irrig, Letters = letters, adjust = "tukey")
+emm_irrig = as.data.frame(emm_irrig)
+pd <- position_dodge(0.1)
+plot_lsmeans=ggplot(emm_irrig,aes(reorder(Irrigation ,-emmean),emmean, fill=.group))+geom_bar(stat="identity")+xlab("Hybrid")+ylab(" LSMeans (Dry yield, t/ha)")+
+  #theme_classic() + 
+  theme( axis.text = element_text( size = 10 ),
+         axis.text.x = element_text(angle=90, size = 10 ),
+         axis.title = element_text( size = 10, face = "bold" ),strip.text = element_text(size = 13, face = 'bold') ) +
+     geom_text(aes(label=round(emmean,2)), position=pd, vjust=0.05,hjust=0.5, size=3)+ theme(axis.text.x = element_text(  vjust = 0.5, hjust=1))+
+  geom_errorbar(aes(ymin=emmean-SE, ymax=emmean+SE), width=.2,
+                 position=position_dodge(.9)) +ggtitle("Estimated marginal means for irrigation (adjusted for density)")+geom_text(aes(label = .group, y = 5), vjust = -0.2, 
+            size = 3, position = position_dodge(width = 0.8))
+#print(plot_lsmeans)
+
+
+
+# Estimated marginal means for row spacing (adjusted for density)
+emm_row <- emmeans(model, ~ interrow_width, at = list(harvest_density_c = 0))
+#print(emm_row)
+#pairs(emm_row)
+emm_row=cld(emm_row, Letters = letters, adjust = "tukey")
+
+emm_row = as.data.frame(emm_row)
+
+plot_lsmeans=ggplot(emm_row,aes(reorder(interrow_width ,-emmean),emmean, fill=.group))+geom_bar(stat="identity")+xlab("Hybrid")+ylab(" LSMeans (Dry yield, t/ha)")+
+  #theme_classic() + 
+  theme( axis.text = element_text( size = 10 ),
+         axis.text.x = element_text(angle=90, size = 10 ),
+         axis.title = element_text( size = 10, face = "bold" ),strip.text = element_text(size = 13, face = 'bold') ) +
+     geom_text(aes(label=round(emmean,2)), position=pd, vjust=0.05,hjust=0.5, size=3)+ theme(axis.text.x = element_text(  vjust = 0.5, hjust=1))+
+  geom_errorbar(aes(ymin=emmean-SE, ymax=emmean+SE), width=.2,
+                 position=position_dodge(.9)) +ggtitle("Estimated marginal means for row spacing (adjusted for density)")+geom_text(aes(label = .group, y = 5), vjust = -0.2, 
+            size = 3, position = position_dodge(width = 0.8))
+#print(plot_lsmeans)
+
+
+# Irrigation × Row spacing interaction
+emm_irrig_row <- emmeans(model, ~ Irrigation * interrow_width, at = list(harvest_density_c = 0))
+#print(emm_irrig_row)
+#pairs(emm_irrig_row, by = "Irrigation")
+emm_irrig_row=cld(emm_irrig_row, Letters = letters, adjust = "tukey")
+
+emm_irrig_row = as.data.frame(emm_irrig_row)
+
+plot_lsmeans=ggplot(emm_irrig_row,aes(reorder(Irrigation ,-emmean),emmean, fill=.group))+geom_bar(stat="identity")+xlab("Hybrid")+ylab(" LSMeans (Dry yield, t/ha)")+
+  #theme_classic() + 
+  theme( axis.text = element_text( size = 10 ),
+         axis.text.x = element_text(angle=90, size = 10 ),
+         axis.title = element_text( size = 10, face = "bold" ),strip.text = element_text(size = 13, face = 'bold') ) + facet_wrap(~interrow_width)+
+     geom_text(aes(label=round(emmean,2)), position=pd, vjust=0.05,hjust=0.5, size=3)+ theme(axis.text.x = element_text(  vjust = 0.5, hjust=1))+
+  geom_errorbar(aes(ymin=emmean-SE, ymax=emmean+SE), width=.2,
+                 position=position_dodge(.9)) +ggtitle("Estimated marginal means for Irrigation × Row spacing interaction (adjusted for density)")+geom_text(aes(label = .group, y = 5), vjust = -0.2, 
+            size = 3, position = position_dodge(width = 0.8))
+#print(plot_lsmeans)
+
+# ==========================================
+# 4. Hybrid Analysis
+# ==========================================
+
+# Get adjusted means for each hybrid
+emm_hybrid <- emmeans(model, ~ Hybrid, at = list(harvest_density_c = 0))
+#print(emm_hybrid)
+emm_hybrid=cld(emm_hybrid, Letters = letters, adjust = "tukey")
+
+emm_hybrid = as.data.frame(emm_hybrid)
+
+plot_lsmeans=ggplot(emm_hybrid,aes(reorder(Hybrid ,-emmean),emmean, fill=.group))+geom_bar(stat="identity")+xlab("Hybrid")+ylab(" LSMeans (Dry yield, t/ha)")+
+  #theme_classic() + 
+  theme( axis.text = element_text( size = 10 ),
+         axis.text.x = element_text(angle=90, size = 10 ),
+         axis.title = element_text( size = 10, face = "bold" ),strip.text = element_text(size = 13, face = 'bold') ) +
+     geom_text(aes(label=round(emmean,2)), position=pd, vjust=0.05,hjust=0.5, size=3)+ theme(axis.text.x = element_text(  vjust = 0.5, hjust=1))+
+  geom_errorbar(aes(ymin=emmean-SE, ymax=emmean+SE), width=.2,
+                 position=position_dodge(.9)) +ggtitle("Estimated marginal means for Hybrid (adjusted for density)")+geom_text(aes(label = .group, y = 5), vjust = -0.2, 
+            size = 3, position = position_dodge(width = 0.8))
+#print(plot_lsmeans)
+
+
+
+# ==========================================
+# 5. Specific Treatment Combinations
+# ==========================================
+
+# Three-way interaction
+emm_all <- emmeans(model, 
+                   ~ Irrigation * interrow_width * Hybrid, 
+                  at = list(harvest_density_c = 0))
+emm_all=cld(emm_all, Letters = letters, adjust = "tukey")
+
+# Plot top combinations
+plot_data <- as.data.frame(emm_all)
+plot_data$Treatment <- paste(plot_data$Irrigation, plot_data$interrow_width, "cm")
+
+
+plot_data = filter(plot_data,!is.na(emmean))
+
+plot_data = plot_data %>% unite(hybrid_irrigation_interrowwdith,Hybrid,Irrigation,interrow_width, sep="_",remove=F)
+
+
+
+```
+
+Hybrids:
+
+- DKC6808 vs EW6436XKLZ = DKC6836SC 
+- DKC6980 vs EW6846XKLZ = DKC7236SC 
+- DKC6625 vs EX6658XKLZ = DKC6648SC 
+- Isogenic: ET6641XKYZ compared to DKC6503  
+
+
+
+```{r echo=F, message=F, warning=F, fig.heigth=10, fig.width=10}
+plot_data = plot_data %>% mutate(hybrid_irrigation_rowspacing = ifelse(hybrid_irrigation_interrowwdith == "DKC6808_0.75_75","01_DKC6808_75%_75cm",ifelse(hybrid_irrigation_interrowwdith == "DKC6808_1_75","02_DKC6808_100%_75cm",ifelse(hybrid_irrigation_interrowwdith == "DKC6836SC_0.75_75","03_DKC6836SC_75%_75cm",ifelse(hybrid_irrigation_interrowwdith == "DKC6836SC_1_75","04_DKC6836SC_100%_75cm",ifelse(hybrid_irrigation_interrowwdith == "DKC6836SC_0.75_40","05_DKC6836SC_75%_40cm",ifelse(hybrid_irrigation_interrowwdith == "DKC6836SC_1_40","06_DKC6836SC_100%_40cm",ifelse(hybrid_irrigation_interrowwdith == "DKC6980_0.75_75","07_DKC6980_75%_75cm",ifelse(hybrid_irrigation_interrowwdith == "DKC6980_1_75","08_DKC6980_100%_75cm",ifelse(hybrid_irrigation_interrowwdith == "DKC7236SC_0.75_75","09_DKC7236SC_75%_75cm",ifelse(hybrid_irrigation_interrowwdith == "DKC7236SC_1_75","10_DKC7236SC_100%_75cm",ifelse(hybrid_irrigation_interrowwdith == "DKC7236SC_0.75_40","11_DKC7236SC_75%_40cm",ifelse(hybrid_irrigation_interrowwdith == "DKC7236SC_1_40","12_DKC7236SC_100%_40cm",ifelse(hybrid_irrigation_interrowwdith == "DKC6625_0.75_75","13_DKC6625_75%_75cm",ifelse(hybrid_irrigation_interrowwdith == "DKC6625_1_75","14_DKC6625_100%_75cm",ifelse(hybrid_irrigation_interrowwdith == "DKC6648SC_0.75_75","15_DKC6648SC_75%_75cm",ifelse(hybrid_irrigation_interrowwdith == "DKC6648SC_1_75","16_DKC6648SC_100%_75cm",ifelse(hybrid_irrigation_interrowwdith == "DKC6648SC_0.75_40","17_DKC6648SC_75%_40cm",ifelse(hybrid_irrigation_interrowwdith == "DKC6648SC_1_40","18_DKC6648SC_100%_40cm",ifelse(hybrid_irrigation_interrowwdith == "DKC6503_0.75_75","19_DKC6503_75%_75cm",ifelse(hybrid_irrigation_interrowwdith == "DKC6503_1_75","20_DKC6503_100%_75cm",ifelse(hybrid_irrigation_interrowwdith == "ET6641XYZ_0.75_75","21_ET6641XYZ:75%:75cm",ifelse(hybrid_irrigation_interrowwdith == "ET6641XYZ_1_75","22_ET6641XYZ:100%:75cm",ifelse(hybrid_irrigation_interrowwdith == "ET6641XYZ_0.75_40","23_ET6641XYZ:75%:40cm",ifelse(hybrid_irrigation_interrowwdith == "ET6641XYZ_1_40","24_ET6641XYZ:100%:40cm",hybrid_irrigation_interrowwdith)))))))))))))))))))))))))
+
+plot_data = plot_data %>% mutate(rm_check = ifelse(Hybrid %in% c("DKC6808","DKC6836SC","DKC6836SC(N)"),"rm_check_1",ifelse(Hybrid %in% c("DKC6980","DKC7236SC","DKC7236SC(N)"),"rm_check_2",ifelse(Hybrid %in% c("DKC6625","DKC6648SC","DKC6648SC(N)"),"rm_check_3","rm_check_4"))))
+
+#lsmeans_1 = lsmeans_1 %>% mutate(hybrid_name = ifelse(Hybrid %in% c("75:100:DKC6808","75:75:DKC6808","75:100:DKC6836","75:75:DKC6836","40:100:DKC6836","40:75:DKC6836"),"rm_check_1",ifelse(hybrid__Target_density %in% c("75:100:DKC6980","75:75:DKC6980","75:100:DKC7236","75:75:DKC7236","40:100:DKC7236","40:75:DKC7236"),"rm_check_2",ifelse(hybrid__Target_density %in% c("75:100:DKC6625","75:75:DKC6625","75:100:DKC6648","75:75:DKC6648","40:100:DKC6648","40:75:DKC6648"),"rm_check_3","rm_check_4"))))
+
+
+plot_data = plot_data %>% unite(hybrid__interrow_cm_plot,Hybrid,interrow_width, sep="_",remove=F)
+
+plot_lsmeans=ggplot(plot_data,aes(reorder(hybrid_irrigation_rowspacing,-emmean),emmean, fill=Irrigation))+geom_bar(stat="identity")+xlab("Hybrid_irrigation(%)_interrowwdith(cm)")+ylab(" LSMeans Dry yield (t/ha)")+
+  #theme_classic() + 
+  theme( axis.text = element_text( size = 10 ),
+         axis.text.x = element_text(angle=90, size = 10 ),
+         axis.title = element_text( size = 10, face = "bold" ),strip.text = element_text(size = 13, face = 'bold') ) +
+     geom_text(aes(label=round(emmean,2)), position=pd, vjust=0.05,hjust=0.5, size=3)+ theme(axis.text.x = element_text(  vjust = 0.5, hjust=1))+
+  geom_errorbar(aes(ymin=emmean-SE, ymax=emmean+SE), width=.2,
+                 position=position_dodge(.9)) +ggtitle("Statistical analysis of yield (t/ha) across 2 years of trial data")
+#+geom_text(aes(label = .group, y = 5, group = Hybrid), vjust = -0.2, 
+           # size = 3, position = position_dodge(width = 0.8))
+print(plot_lsmeans)
+
+plot_lsmeans=ggplot(plot_data,aes(hybrid_irrigation_rowspacing,emmean, fill=.group))+geom_bar(stat="identity")+xlab("Hybrid_irrigation(%)_interrowwdith(cm)")+ylab(" LSMeans Dry yield (t/ha)")+
+  #theme_classic() + 
+  theme( axis.text = element_text( size = 10 ),
+         axis.text.x = element_text(angle=90, size = 10 ),
+         axis.title = element_text( size = 10, face = "bold" ),strip.text = element_text(size = 13, face = 'bold') ) +
+     geom_text(aes(label=round(emmean,2)), position=pd, vjust=0.05,hjust=0.5, size=3)+ theme(axis.text.x = element_text(  vjust = 0.5, hjust=1))+
+  geom_errorbar(aes(ymin=emmean-SE, ymax=emmean+SE), width=.2,
+                 position=position_dodge(.9)) +ggtitle("Statistical analysis of yield (t/ha) across 2 years of trial data")
+#+geom_text(aes(label = .group, y = 5, group = Hybrid), vjust = -0.2, 
+           # size = 3, position = position_dodge(width = 0.8))
+print(plot_lsmeans)
+
+
+
+
+
+# plot_lsmeans=ggplot(plot_data,aes(reorder(Treatment ,-emmean),emmean, fill=.group))+geom_bar(stat="identity")+xlab("Irrigation - Inter row width (cm)")+ylab(" LSMeans (Dry yield, t/ha)")+
+#   #theme_classic() + 
+#   theme( axis.text = element_text( size = 10 ),
+#          axis.text.x = element_text(angle=90, size = 10 ),
+#          axis.title = element_text( size = 10, face = "bold" ),strip.text = element_text(size = 13, face = 'bold') ) +
+#      geom_text(aes(label=round(emmean,2)), position=pd, vjust=0.05,hjust=0.5, size=3)+ theme(axis.text.x = element_text(  vjust = 0.5, hjust=1))+
+#   geom_errorbar(aes(ymin=emmean-SE, ymax=emmean+SE), width=.2,
+#                  position=position_dodge(.9)) +ggtitle("Estimated marginal means for Hybrid (adjusted for density)")+geom_text(aes(label = .group, y = 5), vjust = -0.2, 
+#             size = 3, position = position_dodge(width = 0.8))+ facet_wrap(~Hybrid, scales="free_x")
+# print(plot_lsmeans)
+
+```
+
+
+```{r echo=F, message=F, warning=F, fig.heigth=10, fig.width=15}
+plot_lsmeans=ggplot(plot_data,aes(hybrid_irrigation_rowspacing,emmean, fill=Irrigation))+geom_bar(stat="identity")+xlab("Hybrid_irrigation(%)_interrowwdith(cm)")+ylab(" LSMeans (Dry yield (t/ha))")+
+  #theme_classic() + 
+  theme( axis.text = element_text( size = 10 ),
+         axis.text.x = element_text(angle=90, size = 10 ),
+         axis.title = element_text( size = 10, face = "bold" ),strip.text = element_text(size = 13, face = 'bold') ) +
+     geom_text(aes(label=round(emmean,2)), position=pd, vjust=0.05,hjust=0.5, size=3)+ theme(axis.text.x = element_text(  vjust = 0.5, hjust=1))+
+  geom_errorbar(aes(ymin=emmean-SE, ymax=emmean+SE), width=.2,
+                 position=position_dodge(.9)) +geom_text(aes(label = .group, y = 2, group = hybrid_irrigation_rowspacing), vjust = -0.2, 
+            size = 2.5, position = position_dodge(width = 0.9))+facet_grid(~rm_check, scales="free_x")+ggtitle("Statistical analysis of yield (t/ha) across 2 years of trial data")
+
+#+facet_grid(~Hybrid, scales="free_x")
+print(plot_lsmeans)
+
+#plotly::ggplotly(plot_lsmeans)
+```
+
+# Statistical analysis 2024 & 2025: SSC vs Tall 
+
+```{r echo=F, message=F, warning=F}
+
+ssc_data_1 = read_excel("/mnt/data/SSC_2025_water_Naha.xlsx", sheet = 2)
+
+names(ssc_data_1)[9] = "target_density"
+names(ssc_data_1)[10] = "interrow_width"
+names(ssc_data_1)[15] = "harvest_density"
+names(ssc_data_1)[20] = "dry_yield"
+
+#ssc_data_1 = ssc_data_1 %>% mutate(Hybrid  = ifelse(Hybrid %in% c("DKC6836SC(N)", "DKC6836SC_40cm"),"DKC6836SC(N)",ifelse(Hybrid %in% c("DKC7236SC(N)", "DKC7236SC_40cm"),"DKC7236SC(N)",ifelse(Hybrid %in% c( "ET6641XYZ(N)", "ET6641SC_40cm","ET6641SC"),"ET6641XYZ(N)",ifelse(Hybrid %in% c( "DKC6648SC_40cm", "DKC6648SC","DKC6648SC(N)"),"DKC6648SC(N)",Hybrid)))))
+
+ssc_data_1 = ssc_data_1 %>% mutate(Hybrid  = ifelse(Hybrid %in% c("DKC6836SC(N)", "DKC6836SC_40cm"),"DKC6836SC",ifelse(Hybrid %in% c("DKC7236SC(N)", "DKC7236SC_40cm"),"DKC7236SC",ifelse(Hybrid %in% c( "ET6641XYZ(N)", "ET6641SC_40cm","ET6641SC"),"ET6641XYZ",ifelse(Hybrid %in% c( "DKC6648SC_40cm", "DKC6648SC","DKC6648SC(N)"),"DKC6648SC",Hybrid)))))
+
+ssc_hybrids = c("EW6846XKL1" ,"EW6015XKL1","EW6436XKL1","EW6650XKP1","EW6526XKL1","EW6846","EW6436","DKC6836SC","DKC7236SC","ET6641SC","DKC6648SC","ET6641XYZ") 
+ssc_data_1 = ssc_data_1 %>% mutate(hybrid_type = ifelse(Hybrid %in% ssc_hybrids, "ssc","tall"))
+
+
+ssc_data_1 = ssc_data_1 %>% mutate(Irrigation  = ifelse(Irrigation %in% c(1.00, 100.00),1,ifelse(Irrigation %in% c(0.75, 75.00),0.75,NA)))
+
+ssc_data_1$Irrigation = as.factor(ssc_data_1$Irrigation)
+
+ssc_data_1 = ssc_data_1 %>% unite(hybrid_irrigation_interrowwdith,Hybrid,Irrigation,interrow_width, sep="_",remove=F)
+
+ssc_data_1 = filter(ssc_data_1, !hybrid_irrigation_interrowwdith %in% c("ET6641XYZ(N)_1_75","ET6641XYZ(N)_0.75_75"))
+
+```
+
+
+
+
+```{r echo=F, message=F, warning=F}
+# Center harvest density for better interpretation in models
+data = ssc_data_1
+data$harvest_density_c <- scale(data$harvest_density, center = TRUE, scale = FALSE)[,1]
+
+# First fit a full model to assess density effects
+# Using split-split plot design structure with proper error terms
+model <- lmer(dry_yield ~ as.factor(Irrigation) * as.factor(interrow_width) * as.factor(hybrid_type)  +harvest_density_c+
+             (1|Field/Replicates) +                    # Block effect
+             (1|Field/Replicates:Irrigation) +         # Main plot error (irrigation)
+             (1|Field/Replicates:Irrigation:interrow_width),  # Sub-plot error
+           data = data)
+
+# Check model assumptions
+qqnorm(resid(model))
+qqline(resid(model))
+plot(model)
+Anova(model, type = 3)
+```
+
+### Treatment Means - After Adjustmust for Density
+
+- Irrigation * interrow_width * Hybrid interaction (adjusted for density)
+
+```{r echo=F, message=F, warning=F}
+# ==========================================
+# 3. Treatment Means Adjusted for Density
+# ==========================================
+
+# Estimated marginal means for irrigation (adjusted for density)
+emm_irrig <- emmeans(model, ~ Irrigation, at = list(harvest_density_c = 0))
+#print(emm_irrig)
+#pairs(emm_irrig)
+emm_irrig= cld(emm_irrig, Letters = letters, adjust = "tukey")
+emm_irrig = as.data.frame(emm_irrig)
+pd <- position_dodge(0.1)
+plot_lsmeans=ggplot(emm_irrig,aes(reorder(Irrigation ,-emmean),emmean, fill=.group))+geom_bar(stat="identity")+xlab("Hybrid")+ylab(" LSMeans (Dry yield, t/ha)")+
+  #theme_classic() + 
+  theme( axis.text = element_text( size = 10 ),
+         axis.text.x = element_text(angle=90, size = 10 ),
+         axis.title = element_text( size = 10, face = "bold" ),strip.text = element_text(size = 13, face = 'bold') ) +
+     geom_text(aes(label=round(emmean,2)), position=pd, vjust=0.05,hjust=0.5, size=3)+ theme(axis.text.x = element_text(  vjust = 0.5, hjust=1))+
+  geom_errorbar(aes(ymin=emmean-SE, ymax=emmean+SE), width=.2,
+                 position=position_dodge(.9)) +ggtitle("Estimated marginal means for irrigation (adjusted for density)")+geom_text(aes(label = .group, y = 5), vjust = -0.2, 
+            size = 3, position = position_dodge(width = 0.8))
+#print(plot_lsmeans)
+
+
+
+# Estimated marginal means for row spacing (adjusted for density)
+emm_row <- emmeans(model, ~ interrow_width, at = list(harvest_density_c = 0))
+#print(emm_row)
+#pairs(emm_row)
+emm_row=cld(emm_row, Letters = letters, adjust = "tukey")
+
+emm_row = as.data.frame(emm_row)
+
+plot_lsmeans=ggplot(emm_row,aes(reorder(interrow_width ,-emmean),emmean, fill=.group))+geom_bar(stat="identity")+xlab("Hybrid")+ylab(" LSMeans (Dry yield, t/ha)")+
+  #theme_classic() + 
+  theme( axis.text = element_text( size = 10 ),
+         axis.text.x = element_text(angle=90, size = 10 ),
+         axis.title = element_text( size = 10, face = "bold" ),strip.text = element_text(size = 13, face = 'bold') ) +
+     geom_text(aes(label=round(emmean,2)), position=pd, vjust=0.05,hjust=0.5, size=3)+ theme(axis.text.x = element_text(  vjust = 0.5, hjust=1))+
+  geom_errorbar(aes(ymin=emmean-SE, ymax=emmean+SE), width=.2,
+                 position=position_dodge(.9)) +ggtitle("Estimated marginal means for row spacing (adjusted for density)")+geom_text(aes(label = .group, y = 5), vjust = -0.2, 
+            size = 3, position = position_dodge(width = 0.8))
+#print(plot_lsmeans)
+
+
+# Irrigation × Row spacing interaction
+emm_irrig_row <- emmeans(model, ~ Irrigation * interrow_width, at = list(harvest_density_c = 0))
+#print(emm_irrig_row)
+#pairs(emm_irrig_row, by = "Irrigation")
+emm_irrig_row=cld(emm_irrig_row, Letters = letters, adjust = "tukey")
+
+emm_irrig_row = as.data.frame(emm_irrig_row)
+
+plot_lsmeans=ggplot(emm_irrig_row,aes(reorder(Irrigation ,-emmean),emmean, fill=.group))+geom_bar(stat="identity")+xlab("Hybrid")+ylab(" LSMeans (Dry yield, t/ha)")+
+  #theme_classic() + 
+  theme( axis.text = element_text( size = 10 ),
+         axis.text.x = element_text(angle=90, size = 10 ),
+         axis.title = element_text( size = 10, face = "bold" ),strip.text = element_text(size = 13, face = 'bold') ) + facet_wrap(~interrow_width)+
+     geom_text(aes(label=round(emmean,2)), position=pd, vjust=0.05,hjust=0.5, size=3)+ theme(axis.text.x = element_text(  vjust = 0.5, hjust=1))+
+  geom_errorbar(aes(ymin=emmean-SE, ymax=emmean+SE), width=.2,
+                 position=position_dodge(.9)) +ggtitle("Estimated marginal means for Irrigation × Row spacing interaction (adjusted for density)")+geom_text(aes(label = .group, y = 5), vjust = -0.2, 
+            size = 3, position = position_dodge(width = 0.8))
+#print(plot_lsmeans)
+
+# ==========================================
+# 4. Hybrid Analysis
+# ==========================================
+
+# Get adjusted means for each hybrid
+emm_hybrid <- emmeans(model, ~ hybrid_type, at = list(harvest_density_c = 0))
+#print(emm_hybrid)
+emm_hybrid=cld(emm_hybrid, Letters = letters, adjust = "tukey")
+
+emm_hybrid = as.data.frame(emm_hybrid)
+
+plot_lsmeans=ggplot(emm_hybrid,aes(reorder(hybrid_type ,-emmean),emmean, fill=.group))+geom_bar(stat="identity")+xlab("Hybrid")+ylab(" LSMeans (Dry yield, t/ha)")+
+  #theme_classic() + 
+  theme( axis.text = element_text( size = 10 ),
+         axis.text.x = element_text(angle=90, size = 10 ),
+         axis.title = element_text( size = 10, face = "bold" ),strip.text = element_text(size = 13, face = 'bold') ) +
+     geom_text(aes(label=round(emmean,2)), position=pd, vjust=0.05,hjust=0.5, size=3)+ theme(axis.text.x = element_text(  vjust = 0.5, hjust=1))+
+  geom_errorbar(aes(ymin=emmean-SE, ymax=emmean+SE), width=.2,
+                 position=position_dodge(.9)) +ggtitle("Estimated marginal means for Hybrid (adjusted for density)")+geom_text(aes(label = .group, y = 5), vjust = -0.2, 
+            size = 3, position = position_dodge(width = 0.8))
+#print(plot_lsmeans)
+
+
+
+# ==========================================
+# 5. Specific Treatment Combinations
+# ==========================================
+
+# Three-way interaction
+emm_all <- emmeans(model, 
+                   ~ Irrigation * interrow_width * hybrid_type, 
+                  at = list(harvest_density_c = 0))
+emm_all=cld(emm_all, Letters = letters, adjust = "tukey")
+
+# Plot top combinations
+plot_data <- as.data.frame(emm_all)
+plot_data$Treatment <- paste(plot_data$Irrigation, plot_data$interrow_width, "cm")
+
+
+plot_data = filter(plot_data,!is.na(emmean))
+
+plot_data = plot_data %>% unite(hybrid_irrigation_interrowwdith,hybrid_type,Irrigation,interrow_width, sep="_",remove=F)
+
+
+
+```
+
+Hybrids:
+
+- DKC6808 vs EW6436XKLZ = DKC6836SC 
+- DKC6980 vs EW6846XKLZ = DKC7236SC 
+- DKC6625 vs EX6658XKLZ = DKC6648SC 
+- Isogenic: ET6641XKYZ compared to DKC6503  
+
+
+
+```{r echo=F, message=F, warning=F, fig.heigth=10, fig.width=10}
+plot_data = plot_data %>% mutate(hybrid_irrigation_rowspacing = ifelse(hybrid_irrigation_interrowwdith == "DKC6808_0.75_75","01_DKC6808_75%_75cm",ifelse(hybrid_irrigation_interrowwdith == "DKC6808_1_75","02_DKC6808_100%_75cm",ifelse(hybrid_irrigation_interrowwdith == "DKC6836SC_0.75_75","03_DKC6836SC_75%_75cm",ifelse(hybrid_irrigation_interrowwdith == "DKC6836SC_1_75","04_DKC6836SC_100%_75cm",ifelse(hybrid_irrigation_interrowwdith == "DKC6836SC_0.75_40","05_DKC6836SC_75%_40cm",ifelse(hybrid_irrigation_interrowwdith == "DKC6836SC_1_40","06_DKC6836SC_100%_40cm",ifelse(hybrid_irrigation_interrowwdith == "DKC6980_0.75_75","07_DKC6980_75%_75cm",ifelse(hybrid_irrigation_interrowwdith == "DKC6980_1_75","08_DKC6980_100%_75cm",ifelse(hybrid_irrigation_interrowwdith == "DKC7236SC_0.75_75","09_DKC7236SC_75%_75cm",ifelse(hybrid_irrigation_interrowwdith == "DKC7236SC_1_75","10_DKC7236SC_100%_75cm",ifelse(hybrid_irrigation_interrowwdith == "DKC7236SC_0.75_40","11_DKC7236SC_75%_40cm",ifelse(hybrid_irrigation_interrowwdith == "DKC7236SC_1_40","12_DKC7236SC_100%_40cm",ifelse(hybrid_irrigation_interrowwdith == "DKC6625_0.75_75","13_DKC6625_75%_75cm",ifelse(hybrid_irrigation_interrowwdith == "DKC6625_1_75","14_DKC6625_100%_75cm",ifelse(hybrid_irrigation_interrowwdith == "DKC6648SC_0.75_75","15_DKC6648SC_75%_75cm",ifelse(hybrid_irrigation_interrowwdith == "DKC6648SC_1_75","16_DKC6648SC_100%_75cm",ifelse(hybrid_irrigation_interrowwdith == "DKC6648SC_0.75_40","17_DKC6648SC_75%_40cm",ifelse(hybrid_irrigation_interrowwdith == "DKC6648SC_1_40","18_DKC6648SC_100%_40cm",ifelse(hybrid_irrigation_interrowwdith == "DKC6503_0.75_75","19_DKC6503_75%_75cm",ifelse(hybrid_irrigation_interrowwdith == "DKC6503_1_75","20_DKC6503_100%_75cm",ifelse(hybrid_irrigation_interrowwdith == "ET6641XYZ_0.75_75","21_ET6641XYZ:75%:75cm",ifelse(hybrid_irrigation_interrowwdith == "ET6641XYZ_1_75","22_ET6641XYZ:100%:75cm",ifelse(hybrid_irrigation_interrowwdith == "ET6641XYZ_0.75_40","23_ET6641XYZ:75%:40cm",ifelse(hybrid_irrigation_interrowwdith == "ET6641XYZ_1_40","24_ET6641XYZ:100%:40cm",hybrid_irrigation_interrowwdith)))))))))))))))))))))))))
+
+
+#lsmeans_1 = lsmeans_1 %>% mutate(hybrid_name = ifelse(Hybrid %in% c("75:100:DKC6808","75:75:DKC6808","75:100:DKC6836","75:75:DKC6836","40:100:DKC6836","40:75:DKC6836"),"rm_check_1",ifelse(hybrid__Target_density %in% c("75:100:DKC6980","75:75:DKC6980","75:100:DKC7236","75:75:DKC7236","40:100:DKC7236","40:75:DKC7236"),"rm_check_2",ifelse(hybrid__Target_density %in% c("75:100:DKC6625","75:75:DKC6625","75:100:DKC6648","75:75:DKC6648","40:100:DKC6648","40:75:DKC6648"),"rm_check_3","rm_check_4"))))
+
+
+plot_data = plot_data %>% unite(hybrid__interrow_cm_plot,hybrid_type,interrow_width, sep="_",remove=F)
+
+plot_lsmeans=ggplot(plot_data,aes(reorder(hybrid_irrigation_rowspacing,-emmean),emmean, fill=Irrigation))+geom_bar(stat="identity")+xlab("Hybrid_irrigation(%)_interrowwdith(cm)")+ylab(" LSMeans Dry yield (t/ha)")+
+  #theme_classic() + 
+  theme( axis.text = element_text( size = 10 ),
+         axis.text.x = element_text(angle=90, size = 10 ),
+         axis.title = element_text( size = 10, face = "bold" ),strip.text = element_text(size = 13, face = 'bold') ) +
+     geom_text(aes(label=round(emmean,2)), position=pd, vjust=0.05,hjust=0.5, size=3)+ theme(axis.text.x = element_text(  vjust = 0.5, hjust=1))+
+  geom_errorbar(aes(ymin=emmean-SE, ymax=emmean+SE), width=.2,
+                 position=position_dodge(.9)) +ggtitle("Statistical analysis of yield (t/ha) across 2 years of trial data")
+#+geom_text(aes(label = .group, y = 5, group = Hybrid), vjust = -0.2, 
+           # size = 3, position = position_dodge(width = 0.8))
+print(plot_lsmeans)
+
+plot_lsmeans=ggplot(plot_data,aes(hybrid_irrigation_rowspacing,emmean, fill=.group))+geom_bar(stat="identity")+xlab("Hybrid_irrigation(%)_interrowwdith(cm)")+ylab(" LSMeans Dry yield (t/ha)")+
+  #theme_classic() + 
+  theme( axis.text = element_text( size = 10 ),
+         axis.text.x = element_text(angle=90, size = 10 ),
+         axis.title = element_text( size = 10, face = "bold" ),strip.text = element_text(size = 13, face = 'bold') ) +
+     geom_text(aes(label=round(emmean,2)), position=pd, vjust=0.05,hjust=0.5, size=3)+ theme(axis.text.x = element_text(  vjust = 0.5, hjust=1))+
+  geom_errorbar(aes(ymin=emmean-SE, ymax=emmean+SE), width=.2,
+                 position=position_dodge(.9))+ggtitle("Statistical analysis of yield (t/ha) across 2 years of trial data") 
+#+geom_text(aes(label = .group, y = 5, group = Hybrid), vjust = -0.2, 
+           # size = 3, position = position_dodge(width = 0.8))
+print(plot_lsmeans)
+
+
+
+
+
+# plot_lsmeans=ggplot(plot_data,aes(reorder(Treatment ,-emmean),emmean, fill=.group))+geom_bar(stat="identity")+xlab("Irrigation - Inter row width (cm)")+ylab(" LSMeans (Dry yield, t/ha)")+
+#   #theme_classic() + 
+#   theme( axis.text = element_text( size = 10 ),
+#          axis.text.x = element_text(angle=90, size = 10 ),
+#          axis.title = element_text( size = 10, face = "bold" ),strip.text = element_text(size = 13, face = 'bold') ) +
+#      geom_text(aes(label=round(emmean,2)), position=pd, vjust=0.05,hjust=0.5, size=3)+ theme(axis.text.x = element_text(  vjust = 0.5, hjust=1))+
+#   geom_errorbar(aes(ymin=emmean-SE, ymax=emmean+SE), width=.2,
+#                  position=position_dodge(.9)) +ggtitle("Estimated marginal means for Hybrid (adjusted for density)")+geom_text(aes(label = .group, y = 5), vjust = -0.2, 
+#             size = 3, position = position_dodge(width = 0.8))+ facet_wrap(~Hybrid, scales="free_x")
+# print(plot_lsmeans)
+
+```
+
+
+```{r echo=F, message=F, warning=F}
+plot_lsmeans=ggplot(plot_data,aes(hybrid_irrigation_rowspacing,emmean, fill=Irrigation))+geom_bar(stat="identity")+xlab("Hybrid_irrigation(%)_interrowwdith(cm)")+ylab(" LSMeans (Dry yield (t/ha))")+
+  #theme_classic() + 
+  theme( axis.text = element_text( size = 10 ),
+         axis.text.x = element_text(angle=90, size = 10 ),
+         axis.title = element_text( size = 10, face = "bold" ),strip.text = element_text(size = 13, face = 'bold') ) +
+     geom_text(aes(label=round(emmean,2)), position=pd, vjust=0.05,hjust=0.5, size=3)+ theme(axis.text.x = element_text(  vjust = 0.5, hjust=1))+
+  geom_errorbar(aes(ymin=emmean-SE, ymax=emmean+SE), width=.2,
+                 position=position_dodge(.9)) +geom_text(aes(label = .group, y = 2, group = hybrid_irrigation_rowspacing), vjust = -0.2, 
+            size = 2.5, position = position_dodge(width = 0.9))+ggtitle("Statistical analysis of yield (t/ha) across 2 years of trial data")#+facet_grid(~rm_check, scales="free_x")
+
+#+facet_grid(~Hybrid, scales="free_x")
+print(plot_lsmeans)
+
+
+plot_data = plot_data %>% mutate(hybrid__interrow_cm_plot = ifelse(hybrid__interrow_cm_plot == "tall_75","01_TALL_75cm",ifelse(hybrid__interrow_cm_plot == "TALL_75:75" ,"02_TALL_75",ifelse(hybrid__interrow_cm_plot ==  "ssc_75","02_SSC_75cm",ifelse(hybrid__interrow_cm_plot == "SSC_75:75","04_SSC_75",ifelse(hybrid__interrow_cm_plot == "ssc_40","03_SSC_40cm",ifelse(hybrid__interrow_cm_plot == "SSC_40:75","06_SSC_40",hybrid__interrow_cm_plot)))))))
+
+plot_lsmeans=ggplot(plot_data,aes(hybrid_irrigation_rowspacing,emmean, fill=Irrigation))+geom_bar(stat="identity")+xlab("Hybrid_irrigation(%)_interrowwdith(cm)")+ylab(" LSMeans (Dry yield (t/ha))")+
+  #theme_classic() + 
+  theme( axis.text = element_text( size = 10 ),
+         axis.text.x = element_text(angle=90, size = 10 ),
+         axis.title = element_text( size = 10, face = "bold" ),strip.text = element_text(size = 13, face = 'bold') ) +
+     geom_text(aes(label=round(emmean,2)), position=pd, vjust=0.05,hjust=0.5, size=3)+ theme(axis.text.x = element_text(  vjust = 0.5, hjust=1))+
+  geom_errorbar(aes(ymin=emmean-SE, ymax=emmean+SE), width=.2,
+                 position=position_dodge(.9)) +geom_text(aes(label = .group, y = 2, group = hybrid_irrigation_rowspacing), vjust = -0.2, 
+            size = 2.5, position = position_dodge(width = 0.9))+facet_grid(~hybrid__interrow_cm_plot, scales="free_x")+ggtitle("Statistical analysis of yield (t/ha) across 2 years of trial data")
+
+#+facet_grid(~Hybrid, scales="free_x")
+print(plot_lsmeans)
+
+
+
+#plotly::ggplotly(plot_lsmeans)
+```
+
+# Summary
+
+- The relationship between harvest density and yield shows a clear positive trend across all treatment combinations:
+
+- Irrigation and row width have statistically significant effect on the yield from 2025 season:
+  - The benefit of narrow rows (40cm) was greater under full irrigation (100%)
+  
+- Combining the data from 2024 and 2025 seasons:
+
+    - DKC6648SC x 100% irrigation x 40cm narrow row spacing had a statistically significantly higher yield compared to the correspondign rm-check tall.
+    
+    - SSC x 100% irrigation x 40cm had the highest expected yield in all rm_checks comparison against tall
+    
+    - Overall SSC x 40cm x 75% irrigation had a stiatically higher yield compared to SSC x 75cm and Tall x 75cm in Stress condition (75% irrigation)
+    
+    -Overall SSC x 40cm x 100% irrigation had a stiatically higher yield compared to SSC x 75cm and Tall x 75cm in Non-stress condition (100% irrigation)
+
+
+
+
+
+
+
+```{r echo=F, message=F, warning=F,eval=F}
+# Load required packages
+library(dplyr)
+library(ggplot2)
+
+# Read the data
+#data <- read.csv("greece_yield_data_2025.csv")
+
+ssc_data_1 = read_excel("/mnt/data/SSC_2025_water_Naha.xlsx", sheet = 2)
+
+names(ssc_data_1)[9] = "target_density"
+names(ssc_data_1)[10] = "interrow_width"
+names(ssc_data_1)[15] = "harvest_density"
+names(ssc_data_1)[20] = "dry_yield"
+
+data = ssc_data_1
+# Calculate the difference between target density and actual harvest density
+data <- data %>%
+  mutate(density_diff = `target_density` - harvest_density,
+         density_diff_pct = (density_diff / target_density) * 100)
+
+# Summary statistics by hybrid
+summary_by_hybrid <- data %>%
+  group_by(Year,Hybrid) %>%
+  summarize(
+    mean_density_diff = mean(density_diff),
+    mean_density_diff_pct = mean(density_diff_pct),
+    sd_density_diff = sd(density_diff),
+    sd_density_diff_pct = sd(density_diff_pct),
+    n = n()
+  ) %>%
+  arrange(mean_density_diff)
+
+print(summary_by_hybrid)
+
+# Visualize the density differences by hybrid
+ggplot(data, aes(x = reorder(Hybrid, density_diff), y = density_diff)) +
+  geom_boxplot() + 
+  geom_jitter(width = 0.2, alpha = 0.5) +
+  coord_flip() +
+  labs(
+    title = "Density Difference by Hybrid",
+    x = "Hybrid",
+    y = "Density Difference (plants/ha)"
+  ) +
+  theme_bw()
+
+# Visualize the percentage density differences by hybrid
+ggplot(data, aes(x = reorder(Hybrid, density_diff_pct), y = density_diff_pct)) +
+  geom_boxplot() +
+  geom_jitter(width = 0.2, alpha = 0.5) +
+  coord_flip() +
+  labs(
+    title = "Percentage Density Difference by Hybrid",
+    x = "Hybrid",
+    y = "Density Difference (%)"
+  ) +
+  theme_bw()
+
+# Visualize the relationship between target density and actual harvest density
+ggplot(data, aes(x = `Density targted before sowing`, y = harvest_density, color = Hybrid)) +
+  geom_point(alpha = 0.7) +
+  geom_abline(slope = 1, intercept = 0, linetype = "dashed") +
+  labs(
+    title = "Target Density vs. Harvest Density",
+    x = "Target Density (plants/ha)",
+    y = "Harvest Density (plants/ha)"
+  ) +
+  theme_bw()
+
+# Visualize the relationship between target density and density difference
+ggplot(data, aes(x = `Density targted before sowing`, y = density_diff, color = Hybrid)) +
+  geom_point(alpha = 0.7) +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(
+    title = "Target Density vs. Density Difference",
+    x = "Target Density (plants/ha)",
+    y = "Density Difference (plants/ha)"
+  ) +
+  theme_bw()
+```
+
+
+
+```{r echo=F, message=F, warning=F,eval=F}
+# Classifying seed quality
+# Load required packages
+library(dplyr)
+library(ggplot2)
+library(tidyr)
+
+# Read the data
+#data <- read.csv("greece_yield_data_2025.csv")
+
+# ==========================================
+# 1. Calculate emergence rate metrics
+# ==========================================
+
+# Calculate emergence rate (harvest density / target density)
+data <- data %>%
+  mutate(
+    emergence_rate = (harvest_density / target_density) * 100,
+    density_loss = target_density - harvest_density,
+    density_loss_pct = (density_loss / target_density) * 100
+  )
+
+# ==========================================
+# 2. Explore emergence rate distribution
+# ==========================================
+
+# Overall summary statistics
+emergence_summary <- data %>%
+  summarize(
+    mean_emergence = mean(emergence_rate, na.rm = TRUE),
+    median_emergence = median(emergence_rate, na.rm = TRUE),
+    sd_emergence = sd(emergence_rate, na.rm = TRUE),
+    min_emergence = min(emergence_rate, na.rm = TRUE),
+    max_emergence = max(emergence_rate, na.rm = TRUE),
+    q25 = quantile(emergence_rate, 0.25, na.rm = TRUE),
+    q75 = quantile(emergence_rate, 0.75, na.rm = TRUE)
+  )
+
+print("Overall Emergence Rate Statistics:")
+print(emergence_summary)
+
+# Distribution plot
+ggplot(data, aes(x = emergence_rate)) +
+  geom_histogram(bins = 30, fill = "steelblue", color = "black", alpha = 0.7) +
+  geom_vline(aes(xintercept = mean(emergence_rate)), 
+             color = "red", linetype = "dashed", size = 1) +
+  geom_vline(aes(xintercept = median(emergence_rate)), 
+             color = "blue", linetype = "dashed", size = 1) +
+  labs(title = "Distribution of Emergence Rates",
+       subtitle = paste("Mean =", round(mean(data$emergence_rate), 1), 
+                       "%, Median =", round(median(data$emergence_rate), 1), "%"),
+       x = "Emergence Rate (%)",
+       y = "Frequency") +
+  theme_bw()
+
+# Box plot by hybrid
+ggplot(data, aes(x = reorder(Hybrid, emergence_rate, FUN = median), 
+                 y = emergence_rate, fill = Hybrid)) +
+  geom_boxplot() +
+  coord_flip() +
+  labs(title = "Emergence Rate by Hybrid",
+       x = "Hybrid",
+       y = "Emergence Rate (%)") +
+  theme_bw() +
+  theme(legend.position = "none")
+
+# ==========================================
+# 3. Statistical approach to threshold setting
+# ==========================================
+
+# Method 1: Percentile-based thresholds
+percentiles <- quantile(data$emergence_rate, 
+                       probs = c(0.10, 0.25, 0.50, 0.75, 0.90), 
+                       na.rm = TRUE)
+
+# Method 2: Standard deviation-based thresholds
+mean_emerg <- mean(data$emergence_rate, na.rm = TRUE)
+sd_emerg <- sd(data$emergence_rate, na.rm = TRUE)
+
+# Method 3: Industry standards (typical corn emergence expectations)
+# Based on agronomic literature and industry standards
+
+# ==========================================
+# 4. Proposed threshold classification system
+# ==========================================
+
+# Approach 1: Data-driven percentile method
+classify_emergence_percentile <- function(rate) {
+  case_when(
+    rate >= percentiles[4] ~ "Excellent",  # Top 25%
+    rate >= percentiles[3] ~ "Good",       # 50th-75th percentile
+    rate >= percentiles[2] ~ "Fair",       # 25th-50th percentile
+    TRUE ~ "Poor"                          # Bottom 25%
+  )
+}
+
+# Approach 2: Standard deviation method
+classify_emergence_sd <- function(rate, mean_val, sd_val) {
+  case_when(
+    rate >= mean_val + 0.5 * sd_val ~ "Excellent",
+    rate >= mean_val ~ "Good",
+    rate >= mean_val - 0.5 * sd_val ~ "Fair",
+    TRUE ~ "Poor"
+  )
+}
+
+# Approach 3: Agronomic standards (recommended)
+# Based on typical corn planting expectations:
+# - Excellent: >90% emergence (minimal loss)
+# - Good: 80-90% emergence (acceptable loss)
+# - Fair: 70-80% emergence (concerning loss)
+# - Poor: <70% emergence (unacceptable loss)
+
+classify_emergence_agronomic <- function(rate) {
+  case_when(
+    rate >= 90 ~ "Excellent",
+    rate >= 80 ~ "Good",
+    rate >= 70 ~ "Fair",
+    TRUE ~ "Poor"
+  )
+}
+
+# Apply all three classification methods
+data <- data %>%
+  mutate(
+    quality_percentile = classify_emergence_percentile(emergence_rate),
+    quality_sd = classify_emergence_sd(emergence_rate, mean_emerg, sd_emerg),
+    quality_agronomic = classify_emergence_agronomic(emergence_rate)
+  )
+
+# ==========================================
+# 5. Compare classification methods
+# ==========================================
+
+# Summary by each method
+cat("\n=== PERCENTILE-BASED CLASSIFICATION ===\n")
+table(data$quality_percentile)
+cat("\nThresholds:\n")
+cat("Excellent: >=", round(percentiles[4], 1), "%\n")
+cat("Good: >=", round(percentiles[3], 1), "%\n")
+cat("Fair: >=", round(percentiles[2], 1), "%\n")
+cat("Poor: <", round(percentiles[2], 1), "%\n")
+
+cat("\n=== STANDARD DEVIATION-BASED CLASSIFICATION ===\n")
+table(data$quality_sd)
+cat("\nThresholds:\n")
+cat("Excellent: >=", round(mean_emerg + 0.5 * sd_emerg, 1), "%\n")
+cat("Good: >=", round(mean_emerg, 1), "%\n")
+cat("Fair: >=", round(mean_emerg - 0.5 * sd_emerg, 1), "%\n")
+cat("Poor: <", round(mean_emerg - 0.5 * sd_emerg, 1), "%\n")
+
+cat("\n=== AGRONOMIC STANDARDS CLASSIFICATION (RECOMMENDED) ===\n")
+table(data$quality_agronomic)
+cat("\nThresholds:\n")
+cat("Excellent: >= 90%\n")
+cat("Good: 80-90%\n")
+cat("Fair: 70-80%\n")
+cat("Poor: < 70%\n")
+
+# ==========================================
+# 6. Visualize classifications
+# ==========================================
+
+# Create comparison plot
+data_long <- data %>%
+  dplyr::select(Hybrid, emergence_rate, quality_percentile, quality_sd, quality_agronomic) %>%
+  pivot_longer(cols = starts_with("quality_"), 
+               names_to = "method", 
+               values_to = "classification") %>%
+  mutate(method = recode(method,
+                        quality_percentile = "Percentile",
+                        quality_sd = "Std Dev",
+                        quality_agronomic = "Agronomic"))
+
+# Set factor levels for proper ordering
+data_long$classification <- factor(data_long$classification, 
+                                   levels = c("Excellent", "Good", "Fair", "Poor"))
+
+# Stacked bar chart comparing methods
+ggplot(data_long, aes(x = method, fill = classification)) +
+  geom_bar(position = "fill") +
+  scale_y_continuous(labels = scales::percent) +
+  scale_fill_manual(values = c("Excellent" = "#2E7D32", 
+                               "Good" = "#66BB6A",
+                               "Fair" = "#FFA726", 
+                               "Poor" = "#E53935")) +
+  labs(title = "Comparison of Classification Methods",
+       x = "Classification Method",
+       y = "Proportion",
+       fill = "Seed Quality") +
+  theme_bw()
+
+# Scatter plot with agronomic classification
+ggplot(data, aes(x = `Density.targted.before.sowing`, 
+                 y = harvest_density, 
+                 color = quality_agronomic)) +
+  geom_point(size = 3, alpha = 0.7) +
+  geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "black") +
+  geom_abline(slope = 0.9, intercept = 0, linetype = "dashed", color = "#2E7D32") +
+  geom_abline(slope = 0.8, intercept = 0, linetype = "dashed", color = "#66BB6A") +
+  geom_abline(slope = 0.7, intercept = 0, linetype = "dashed", color = "#FFA726") +
+  scale_color_manual(values = c("Excellent" = "#2E7D32", 
+                                "Good" = "#66BB6A",
+                                "Fair" = "#FFA726", 
+                                "Poor" = "#E53935")) +
+  labs(title = "Target vs. Harvest Density with Seed Quality Classification",
+       subtitle = "Dashed lines show 100%, 90%, 80%, and 70% emergence",
+       x = "Target Density (plants/ha)",
+       y = "Harvest Density (plants/ha)",
+       color = "Seed Quality") +
+  theme_bw()
+
+# ==========================================
+# 7. Emergence rate by hybrid and treatment
+# ==========================================
+
+# Summary by hybrid
+hybrid_emergence <- data %>%
+  group_by(Hybrid) %>%
+  summarize(
+    mean_emergence = mean(emergence_rate, na.rm = TRUE),
+    sd_emergence = sd(emergence_rate, na.rm = TRUE),
+    n = n(),
+    excellent = sum(quality_agronomic == "Excellent"),
+    good = sum(quality_agronomic == "Good"),
+    fair = sum(quality_agronomic == "Fair"),
+    poor = sum(quality_agronomic == "Poor")
+  ) %>%
+  arrange(desc(mean_emergence))
+
+print("\nEmergence Rate by Hybrid:")
+print(hybrid_emergence)
+
+# Summary by irrigation
+irrigation_emergence <- data %>%
+  group_by(Irrigation) %>%
+  summarize(
+    mean_emergence = mean(emergence_rate, na.rm = TRUE),
+    sd_emergence = sd(emergence_rate, na.rm = TRUE),
+    n = n()
+  )
+
+print("\nEmergence Rate by Irrigation:")
+print(irrigation_emergence)
+
+# Summary by row spacing
+spacing_emergence <- data %>%
+  group_by(interrow_width) %>%
+  summarize(
+    mean_emergence = mean(emergence_rate, na.rm = TRUE),
+    sd_emergence = sd(emergence_rate, na.rm = TRUE),
+    n = n()
+  )
+
+print("\nEmergence Rate by Row Spacing:")
+print(spacing_emergence)
+
+# ==========================================
+# 8. Recommended threshold function
+# ==========================================
+
+# Final recommended classification function
+classify_seed_quality <- function(emergence_rate) {
+  case_when(
+    emergence_rate >= 90 ~ "Excellent",
+    emergence_rate >= 80 ~ "Good",
+    emergence_rate >= 70 ~ "Fair",
+    emergence_rate < 70 ~ "Poor",
+    TRUE ~ NA_character_
+  )
+}
+
+# Apply to dataset
+data$seed_quality <- classify_seed_quality(data$emergence_rate)
+
+# Create summary table
+quality_summary <- data %>%
+  group_by(seed_quality) %>%
+  summarize(
+    count = n(),
+    pct = n() / nrow(data) * 100,
+    mean_emergence = mean(emergence_rate),
+    mean_yield = mean(dry_yield),
+    sd_yield = sd(dry_yield)
+  ) %>%
+  arrange(desc(mean_emergence))
+
+print("\n=== FINAL SEED QUALITY CLASSIFICATION SUMMARY ===")
+print(quality_summary)
+
+# ==========================================
+# 9. Relationship between seed quality and yield
+# ==========================================
+
+# ANOVA: Does seed quality affect yield?
+anova_result <- aov(dry_yield ~ seed_quality, data = data)
+summary(anova_result)
+
+# Box plot: Yield by seed quality
+ggplot(data, aes(x = seed_quality, y = dry_yield, fill = seed_quality)) +
+  geom_boxplot() +
+  scale_fill_manual(values = c("Excellent" = "#2E7D32", 
+                               "Good" = "#66BB6A",
+                               "Fair" = "#FFA726", 
+                               "Poor" = "#E53935")) +
+  labs(title = "Yield by Seed Quality Classification",
+       x = "Seed Quality",
+       y = "Dry Yield (t/ha)") +
+  theme_bw() +
+  theme(legend.position = "none")
+
+# ==========================================
+# 10. Export results
+# ==========================================
+
+# Save classified data
+write.csv(data, "greece_yield_data_with_seed_quality.csv", row.names = FALSE)
+
+# Create summary report
+sink("seed_quality_classification_report.txt")
+cat("SEED QUALITY CLASSIFICATION REPORT\n")
+cat("==================================\n\n")
+cat("Dataset: greece_yield_data_2025.csv\n")
+cat("Total observations:", nrow(data), "\n\n")
+cat("RECOMMENDED THRESHOLDS (Agronomic Standards):\n")
+cat("---------------------------------------------\n")
+cat("Excellent: >= 90% emergence (minimal loss)\n")
+cat("Good: 80-90% emergence (acceptable loss)\n")
+cat("Fair: 70-80% emergence (concerning loss)\n")
+cat("Poor: < 70% emergence (unacceptable loss)\n\n")
+cat("OVERALL STATISTICS:\n")
+cat("-------------------\n")
+print(emergence_summary)
+cat("\n\nCLASSIFICATION DISTRIBUTION:\n")
+cat("----------------------------\n")
+print(quality_summary)
+cat("\n\nTOP 5 HYBRIDS BY EMERGENCE RATE:\n")
+cat("---------------------------------\n")
+print(head(hybrid_emergence, 5))
+sink()
+
+cat("\nAnalysis complete! Results saved to:\n")
+cat("- greece_yield_data_with_seed_quality.csv\n")
+cat("- seed_quality_classification_report.txt\n")
+```
+
+
+
+
+
+# Exploratory analysis 2025 season - Density and Uniformity as factors
+
+
+```{r echo=F, message=F, warning=F, fig.width=16, fig.height=7}
+# Load required packages
+library(readxl)
+library(lme4)
+library(lmerTest)
+library(emmeans)
+library(car)
+library(ggplot2)
+library(dplyr)
+library(multcomp)
+library(tidyr)
+
+# Import data (assuming it's in a csv file)
+# For the code example, I'll use the provided dataset
+ssc_data = read_excel("/mnt/data/Copy of SSC_2025_water_Naha_1.xlsx", sheet = 1)
+
+names(ssc_data)[9] = "target_density"
+names(ssc_data)[10] = "interrow_width"
+names(ssc_data)[15] = "harvest_density"
+names(ssc_data)[21] = "dry_yield"
+names(ssc_data)[16] = "plot_uniformity"
+#renaming hybrids
+#ssc_data = ssc_data %>% mutate(Hybrid  = ifelse(Hybrid %in% c("DKC6836SC(N)", "DKC6836SC_40cm"),"DKC6836SC",ifelse(Hybrid %in% c("DKC7236SC(N)", "DKC7236SC_40cm"),"DKC7236SC",ifelse(Hybrid %in% c( "ET6641XYZ(N)", "ET6641SC_40cm","ET6641SC"),"ET6641XYZ",ifelse(Hybrid %in% c( "DKC6648SC_40cm", "DKC6648SC","DKC6648SC(N)"),"DKC6648SC",Hybrid)))))
+
+
+# Examine data structure
+
+data=ssc_data
+# Convert categorical variables to factors
+data$Hybrid <- as.factor(data$Hybrid)
+data$Irrigation <- as.factor(data$Irrigation)
+data$interrow_width <- as.factor(data$interrow_width)
+data$Replicates <- as.factor(data$Replicates)
+data$Range <- as.factor(data$Range)
+
+# Create hybrid type variable for analysis
+data$hybrid_type <- ifelse(grepl("SC", data$Hybrid), "SC", "Tall")
+data$hybrid_type <- ifelse(grepl("XYZ", data$Hybrid), "SC", data$hybrid_type)
+data$hybrid_type <- as.factor(data$hybrid_type)
+
+#filter plots with >=7 plot_uniformity ratings
+#data = filter(data, plot_uniformity<6)
+
+
+# Look at the relationship between harvest density and yield
+ggplot(data, aes(x = harvest_density, y = dry_yield, color = Irrigation)) +
+  geom_point(alpha = 0.7) +
+  geom_smooth(method = "lm", se = FALSE) +
+  facet_grid(interrow_width ~ hybrid_type) +
+  labs(title = "Yield vs Harvest Density",
+       x = "Harvest Density (plants/ha)",
+       y = "Dry Yield (t/ha)")+
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+
+
+ggplot(data, aes(x = harvest_density, y = dry_yield, color = Irrigation)) +
+  geom_point(alpha = 0.7) +
+  geom_smooth(method = "lm", se = FALSE) +
+  facet_grid(interrow_width ~ Hybrid) +
+  labs(title = "Yield vs Harvest Density",
+       x = "Harvest Density (plants/ha)",
+       y = "Dry Yield (t/ha)") +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+
+
+corn_data = data%>%
+  group_by(Field) %>%
+  summarise(
+    n = n(),
+    mean_yield = mean(dry_yield, na.rm = TRUE),
+    sd_yield = sd(dry_yield, na.rm = TRUE),
+    mean_uniformity = mean(plot_uniformity, na.rm = TRUE),
+    sd_uniformity = sd(plot_uniformity, na.rm = TRUE)
+  )
+
+p2 <- ggplot(corn_data, aes(x = Field, y = mean_uniformity, fill = Field)) +
+  geom_boxplot() +
+  theme_bw() +
+  labs(title = "Plot Uniformity by Location")
+p2
+
+ggplot(data, aes(x = plot_uniformity, y = dry_yield, color = Field)) +
+  geom_point(alpha = 0.6) +
+  geom_smooth(method = "lm", se = TRUE) +
+  facet_wrap(~ Field) +
+  theme_bw() +
+  labs(title = "Yield vs Plot Uniformity by Location")
+
+ggplot(data, aes(x = plot_uniformity, y = dry_yield, color = Field)) +
+  geom_point(alpha = 0.6) +
+  geom_smooth(method = "lm", se = TRUE) +
+  facet_wrap(hybrid_type~ Field) +
+  theme_bw() +
+  labs(title = "Yield vs Plot Uniformity by Location")
+
+
+ggplot(data, aes(x = plot_uniformity, y = dry_yield, color = Field)) +
+  geom_point(alpha = 0.6) +
+  geom_smooth(method = "lm", se = TRUE) +
+  facet_wrap(Field~Hybrid) +
+  theme_bw() +
+  labs(title = "Yield vs Plot Uniformity by Location & Hybrid")
+```
+
+
+# Statistical analysis - 2025 season (Density & plot uniformity impact)
+
+
+## Testing for density & plot uniformity impact
+
+### Model 1: Density & plot uniformity as covariates
+
+- Harvest density and plot uniformity values were normalized for better interpretation in models
+
+```{r echo=T, message=F, warning=F}
+data$harvest_density_c <- scale(data$harvest_density, center = TRUE, scale = FALSE)[,1]
+data$plot_uniformity_c <- scale(data$plot_uniformity, center = TRUE, scale = FALSE)[,1]
+
+
+# m1 <- lmer(dry_yield ~ Irrigation * interrow_width * Hybrid + harvest_density_c +plot_uniformity_c+
+#              (1|Field/Replicates) +                    # Block effect
+#              (1|Field/Replicates:Irrigation) +         # Main plot error (irrigation)
+#              (1|Field/Replicates:Irrigation:interrow_width),  # Sub-plot error
+#            data = data)
+
+model1 <- lmer(dry_yield ~ Irrigation * interrow_width * Hybrid + 
+                       harvest_density_c + plot_uniformity_c +
+                       (1|Field) + (1|Field:Replicates),
+               data = data,
+               control = lmerControl(optimizer = "bobyqa"))
+
+qqnorm(resid(model1))
+qqline(resid(model1))
+plot(model1)
+Anova(model1, type = 2)
+```
+
+
+```{r echo=F, message=F, warning=F,eval=F}
+# Center harvest density for better interpretation in models
+#data$harvest_density_c <- scale(data$harvest_density, center = TRUE, scale = FALSE)[,1]
+
+# First fit a full model to assess density effects
+# Using split-split plot design structure with proper error terms
+m1 <- lmer(dry_yield ~ Irrigation * interrow_width * Hybrid + harvest_density_c +
+             (1|Field/Replicates) +                    # Block effect
+             (1|Field/Replicates:Irrigation) +         # Main plot error (irrigation)
+             (1|Field/Replicates:Irrigation:interrow_width),  # Sub-plot error
+           data = data)
+
+# Check model assumptions
+qqnorm(resid(m1))
+qqline(resid(m1))
+plot(m1)
+Anova(m1, type = 2)
+```
+
+
+###  Model 2 :-  Density as part of the interaction term to test if desity interacts with other treatments
+
+```{r echo=T, message=F, warning=F}
+model2 <- lmer(dry_yield ~ Irrigation * interrow_width * Hybrid + 
+                       harvest_density_c + plot_uniformity_c +
+                       interrow_width:Field + Irrigation:Field + Hybrid:Field +
+                       (1|Field) + (1|Field:Replicates),
+               data = data,
+               control = lmerControl(optimizer = "bobyqa"))
+
+#summary(model2)
+qqnorm(resid(model2))
+qqline(resid(model2))
+plot(model2)
+Anova(model2, type = 2)
+```
+
+
+
+
+### Model 3: Full random slopes for treatments by location (complex but comprehensive)
+
+
+- This allows all treatment effects to vary by location
+
+```{r echo=T, message=F, warning=F}
+model3 <- lmer(dry_yield ~ Irrigation * interrow_width * Hybrid + 
+                       harvest_density_c + plot_uniformity_c +
+                       (1 + interrow_width + Irrigation + Hybrid|Field) + 
+                       (1|Field:Replicates),
+               data = data,
+               control = lmerControl(optimizer = "bobyqa"))
+
+#summary(model2)
+qqnorm(resid(model3))
+qqline(resid(model3))
+plot(model3)
+Anova(model3, type = 2)
+```
+
+### Model 4: Simplified without three-way interaction
+
+
+```{r echo=T, message=F, warning=F}
+# Model with only density
+model4 <- lmer(dry_yield ~ interrow_width + Irrigation + Hybrid +
+                       interrow_width:Irrigation + interrow_width:Hybrid + Irrigation:Hybrid +
+                       harvest_density_c + plot_uniformity_c +
+                       (1|Field) + (1|Field:Replicates),
+               data = data,
+               control = lmerControl(optimizer = "bobyqa"))
+
+# Check model assumptions
+qqnorm(resid(model4))
+qqline(resid(model4))
+plot(model4)
+Anova(model4, type = 2)
+```
+
+```{r echo=T, message=F, warning=F}
+model5 <- lmer(dry_yield ~ Irrigation * interrow_width * Hybrid + harvest_density_c +plot_uniformity_c+
+             (1|Field/Replicates) +                    # Block effect
+             (1|Field/Replicates:Irrigation) +         # Main plot error (irrigation)
+             (1|Field/Replicates:Irrigation:interrow_width),  # Sub-plot error
+           data = data)
+
+# Check model assumptions
+qqnorm(resid(model5))
+qqline(resid(model5))
+plot(model5)
+Anova(model5)
+```
+
+
+### Compare 4 models
+
+```{r echo=F, message=F, warning=F}
+
+anova(model1,model4,model5)
+AIC(model1, model4,model5)
+
+# Select the best model (example: using model2)
+final_model <- model5
+
+# ==========================================
+# 2. Main Analysis: Irrigation × Inter-row Width × Hybrid effects
+# ==========================================
+
+# Use the simpler model if density interactions are not significant
+# (based on previous test)
+
+# Get Type III ANOVA to test main effects and interactions
+
+
+# Extract coefficient for density effect
+summary(model5)
+coef_summary <- summary(model5)$coefficients
+density_effect <- coef_summary["harvest_density_c", "Estimate"]
+density_p <- coef_summary["harvest_density_c", "Pr(>|t|)"]
+
+cat("Yield change per 1000 plants/ha:", density_effect * 1000, "t/ha, p =", density_p, "\n")
+
+
+```
+
+### Quantifying variance explanation using R2 values - Density vs Full model
+
+```{r echo=F, message=F, warning=F}
+
+# Model with only density
+m_density <- lmer(dry_yield ~ plot_uniformity_c +
+                    (1|Field/Replicates) +
+                    (1|Field/Replicates:Irrigation) +
+                    (1|Field/Replicates:Irrigation:interrow_width),
+                  data = data)
+
+# Calculate R-squared for density-only model
+r2_density <- performance::r2(m_density)
+
+# Calculate R-squared for full model
+r2_full <- performance::r2(model5)
+
+cat("Variance explained by density alone:", r2_density$R2_marginal, "\n")
+cat("Total variance explained by full model:", r2_full$R2_marginal, "\n")
+cat("Additional variance explained by treatments:", 
+    r2_full$R2_marginal - r2_density$R2_marginal, "\n")
+
+# # Calculate density effect size
+# density_sd <- sd(data$harvest_density)
+# density_range <- range(data$harvest_density)
+# density_range_effect <- diff(density_range) * density_effect
+# 
+# # Calculate treatment effect ranges
+# # Extract predictions across all treatment combinations
+# grid <- expand.grid(
+#   Irrigation = levels(data$Irrigation),
+#   interrow_width = levels(data$interrow_width),
+#   Hybrid = levels(data$Hybrid)[1:8],  # Using first 8 hybrids for clarity
+#   harvest_density_c = 0
+# )
+# 
+# # Predict values
+# predictions <- predict(m1, newdata = grid, re.form = NA)
+# grid$predicted <- predictions
+# 
+# # Calculate ranges by factor
+# irrig_range <- tapply(grid$predicted, grid$Irrigation, mean)
+# irrig_effect_magnitude <- max(irrig_range) - min(irrig_range)
+# 
+# row_range <- tapply(grid$predicted, grid$interrow_width, mean)
+# row_effect_magnitude <- max(row_range) - min(row_range)
+# 
+# hybrid_range <- tapply(grid$predicted, grid$Hybrid, mean)
+# hybrid_effect_magnitude <- max(hybrid_range) - min(hybrid_range)
+# 
+# # Compare magnitudes
+# effect_magnitudes <- data.frame(
+#   Factor = c("Plant Density (full range)", 
+#              "Irrigation (100% vs 75%)", 
+#              "Row Spacing (75cm vs 40cm)",
+#              "Hybrid (best vs worst)"),
+#   Magnitude = c(density_range_effect, 
+#                 irrig_effect_magnitude, 
+#                 row_effect_magnitude, 
+#                 hybrid_effect_magnitude)
+# )
+# 
+# ggplot(effect_magnitudes, aes(x = reorder(Factor, Magnitude), y = Magnitude)) +
+#   geom_bar(stat = "identity", fill = "darkgreen") +
+#   coord_flip() +
+#   labs(title = "Magnitude of effects on yield (t/ha)",
+#        subtitle = "Comparing observed ranges of each factor",
+#        x = "", y = "Effect on yield (t/ha)")
+```
+
+
+### Treatment Means - After Adjustmust for Density & Plot uniformity
+
+- Estimated marginal means for irrigation (adjusted for density)
+
+- Estimated marginal means for row spacing (adjusted for density)
+
+- Irrigation × Row spacing interaction
+
+- Hybrid Analysis
+
+- Irrigation * interrow_width * Hybrid interaction
+
+```{r echo=F, message=F, warning=F}
+# ==========================================
+# 3. Treatment Means Adjusted for Density
+# ==========================================
+m1 = model5
+# Estimated marginal means for irrigation (adjusted for density)
+emm_irrig <- emmeans(m1, ~ Irrigation, at = list(harvest_density_c = 0))
+print(emm_irrig)
+pairs(emm_irrig)
+emm_irrig= cld(emm_irrig, Letters = letters, adjust = "tukey")
+emm_irrig = as.data.frame(emm_irrig)
+pd <- position_dodge(0.1)
+plot_lsmeans=ggplot(emm_irrig,aes(reorder(Irrigation ,-emmean),emmean, fill=.group))+geom_bar(stat="identity")+xlab("Hybrid")+ylab(" LSMeans (Dry yield, t/ha)")+
+  #theme_classic() + 
+  theme( axis.text = element_text( size = 10 ),
+         axis.text.x = element_text(angle=90, size = 10 ),
+         axis.title = element_text( size = 10, face = "bold" ),strip.text = element_text(size = 13, face = 'bold') ) +
+     geom_text(aes(label=round(emmean,2)), position=pd, vjust=0.05,hjust=0.5, size=3)+ theme(axis.text.x = element_text(  vjust = 0.5, hjust=1))+
+  geom_errorbar(aes(ymin=emmean-SE, ymax=emmean+SE), width=.2,
+                 position=position_dodge(.9)) +ggtitle("Estimated marginal means for irrigation (adjusted for density & Plot uniformity)")+geom_text(aes(label = .group, y = 5), vjust = -0.2, 
+            size = 3, position = position_dodge(width = 0.8))
+print(plot_lsmeans)
+
+
+
+# Estimated marginal means for row spacing (adjusted for density)
+emm_row <- emmeans(m1, ~ interrow_width, at = list(harvest_density_c = 0))
+print(emm_row)
+pairs(emm_row)
+emm_row=cld(emm_row, Letters = letters, adjust = "tukey")
+
+emm_row = as.data.frame(emm_row)
+
+plot_lsmeans=ggplot(emm_row,aes(reorder(interrow_width ,-emmean),emmean, fill=.group))+geom_bar(stat="identity")+xlab("Hybrid")+ylab(" LSMeans (Dry yield, t/ha)")+
+  #theme_classic() + 
+  theme( axis.text = element_text( size = 10 ),
+         axis.text.x = element_text(angle=90, size = 10 ),
+         axis.title = element_text( size = 10, face = "bold" ),strip.text = element_text(size = 13, face = 'bold') ) +
+     geom_text(aes(label=round(emmean,2)), position=pd, vjust=0.05,hjust=0.5, size=3)+ theme(axis.text.x = element_text(  vjust = 0.5, hjust=1))+
+  geom_errorbar(aes(ymin=emmean-SE, ymax=emmean+SE), width=.2,
+                 position=position_dodge(.9)) +ggtitle("Estimated marginal means for row spacing (adjusted for density & Plot uniformity)")+geom_text(aes(label = .group, y = 5), vjust = -0.2, 
+            size = 3, position = position_dodge(width = 0.8))
+print(plot_lsmeans)
+
+
+# Irrigation × Row spacing interaction
+emm_irrig_row <- emmeans(m1, ~ Irrigation * interrow_width, at = list(harvest_density_c = 0))
+print(emm_irrig_row)
+pairs(emm_irrig_row, by = "Irrigation")
+emm_irrig_row=cld(emm_irrig_row, Letters = letters, adjust = "tukey")
+
+emm_irrig_row = as.data.frame(emm_irrig_row)
+
+plot_lsmeans=ggplot(emm_irrig_row,aes(reorder(Irrigation ,-emmean),emmean, fill=.group))+geom_bar(stat="identity")+xlab("Hybrid")+ylab(" LSMeans (Dry yield, t/ha)")+
+  #theme_classic() + 
+  theme( axis.text = element_text( size = 10 ),
+         axis.text.x = element_text(angle=90, size = 10 ),
+         axis.title = element_text( size = 10, face = "bold" ),strip.text = element_text(size = 13, face = 'bold') ) + facet_wrap(~interrow_width)+
+     geom_text(aes(label=round(emmean,2)), position=pd, vjust=0.05,hjust=0.5, size=3)+ theme(axis.text.x = element_text(  vjust = 0.5, hjust=1))+
+  geom_errorbar(aes(ymin=emmean-SE, ymax=emmean+SE), width=.2,
+                 position=position_dodge(.9)) +ggtitle("Estimated marginal means for Irrigation × Row spacing interaction (adjusted for density & Plot uniformity)")+geom_text(aes(label = .group, y = 5), vjust = -0.2, 
+            size = 3, position = position_dodge(width = 0.8))
+print(plot_lsmeans)
+
+# ==========================================
+# 4. Hybrid Analysis
+# ==========================================
+
+# Get adjusted means for each hybrid
+emm_hybrid <- emmeans(m1, ~ Hybrid, at = list(harvest_density_c = 0))
+print(emm_hybrid)
+emm_hybrid=cld(emm_hybrid, Letters = letters, adjust = "tukey")
+
+emm_hybrid = as.data.frame(emm_hybrid)
+
+plot_lsmeans=ggplot(emm_hybrid,aes(reorder(Hybrid ,-emmean),emmean, fill=.group))+geom_bar(stat="identity")+xlab("Hybrid")+ylab(" LSMeans (Dry yield, t/ha)")+
+  #theme_classic() + 
+  theme( axis.text = element_text( size = 10 ),
+         axis.text.x = element_text(angle=90, size = 10 ),
+         axis.title = element_text( size = 10, face = "bold" ),strip.text = element_text(size = 13, face = 'bold') ) +
+     geom_text(aes(label=round(emmean,2)), position=pd, vjust=0.05,hjust=0.5, size=3)+ theme(axis.text.x = element_text(  vjust = 0.5, hjust=1))+
+  geom_errorbar(aes(ymin=emmean-SE, ymax=emmean+SE), width=.2,
+                 position=position_dodge(.9)) +ggtitle("Estimated marginal means for Hybrid (adjusted for density & Plot uniformity)")+geom_text(aes(label = .group, y = 5), vjust = -0.2, 
+            size = 3, position = position_dodge(width = 0.8))
+print(plot_lsmeans)
+
+
+
+# ==========================================
+# 5. Specific Treatment Combinations
+# ==========================================
+
+# Three-way interaction
+emm_all <- emmeans(m1, 
+                   ~ Irrigation * interrow_width * Hybrid, 
+                  at = list(harvest_density_c = 0))
+emm_all=cld(emm_all, Letters = letters, adjust = "tukey")
+
+# Plot top combinations
+plot_data <- as.data.frame(emm_all)
+plot_data$Treatment <- paste(plot_data$Irrigation, plot_data$interrow_width, "cm")
+
+
+
+
+plot_data = plot_data %>% unite(hybrid_irrigation_interrowwdith,Hybrid,Irrigation,interrow_width, sep="_",remove=F)
+
+
+
+```
+
+Hybrids:
+
+- DKC6808 vs EW6436XKLZ = DKC6836SC 
+- DKC6980 vs EW6846XKLZ = DKC7236SC 
+- DKC6625 vs EX6658XKLZ = DKC6648SC 
+- Isogenic: ET6641XKYZ compared to DKC6503  
+
+
+
+```{r echo=F, message=F, warning=F, fig.heigth=10, fig.width=10}
+plot_data = plot_data %>% mutate(hybrid_irrigation_rowspacing = ifelse(hybrid_irrigation_interrowwdith == "DKC6808_0.75_75","01_DKC6808_75%_75cm",ifelse(hybrid_irrigation_interrowwdith == "DKC6808_1_75","02_DKC6808_100%_75cm",ifelse(hybrid_irrigation_interrowwdith == "DKC6836SC_0.75_75","03_DKC6836SC_75%_75cm",ifelse(hybrid_irrigation_interrowwdith == "DKC6836SC_1_75","04_DKC6836SC_100%_75cm",ifelse(hybrid_irrigation_interrowwdith == "DKC6836SC(N)_0.75_40","05_DKC6836SC_75%_40cm",ifelse(hybrid_irrigation_interrowwdith == "DKC6836SC(N)_1_40","06_DKC6836SC_100%_40cm",ifelse(hybrid_irrigation_interrowwdith == "DKC6980_0.75_75","07_DKC6980_75%_75cm",ifelse(hybrid_irrigation_interrowwdith == "DKC6980_1_75","08_DKC6980_100%_75cm",ifelse(hybrid_irrigation_interrowwdith == "DKC7236SC_0.75_75","09_DKC7236SC_75%_75cm",ifelse(hybrid_irrigation_interrowwdith == "DKC7236SC_1_75","10_DKC7236SC_100%_75cm",ifelse(hybrid_irrigation_interrowwdith == "DKC7236SC(N)_0.75_40","11_DKC7236SC_75%_40cm",ifelse(hybrid_irrigation_interrowwdith == "DKC7236SC(N)_1_40","12_DKC7236SC_100%_40cm",ifelse(hybrid_irrigation_interrowwdith == "DKC6625_0.75_75","13_DKC6625_75%_75cm",ifelse(hybrid_irrigation_interrowwdith == "DKC6625_1_75","14_DKC6625_100%_75cm",ifelse(hybrid_irrigation_interrowwdith == "DKC6648SC_0.75_75","15_DKC6648SC_75%_75cm",ifelse(hybrid_irrigation_interrowwdith == "DKC6648SC_1_75","16_DKC6648SC_100%_75cm",ifelse(hybrid_irrigation_interrowwdith == "DKC6648SC(N)_0.75_40","17_DKC6648SC_75%_40cm",ifelse(hybrid_irrigation_interrowwdith == "DKC6648SC(N)_1_40","18_DKC6648SC_100%_40cm",ifelse(hybrid_irrigation_interrowwdith == "DKC6503_0.75_75","19_DKC6503_75%_75cm",ifelse(hybrid_irrigation_interrowwdith == "DKC6503_1_75","20_DKC6503_100%_75cm",ifelse(hybrid_irrigation_interrowwdith == "ET6641XYZ_0.75_75","21_ET6641XYZ:75%:75cm",ifelse(hybrid_irrigation_interrowwdith == "ET6641XYZ_1_75","22_ET6641XYZ:100%:75cm",ifelse(hybrid_irrigation_interrowwdith == "ET6641XYZ(N)_0.75_40","23_ET6641XYZ:75%:40cm",ifelse(hybrid_irrigation_interrowwdith == "ET6641XYZ(N)_1_40","24_ET6641XYZ:100%:40cm",hybrid_irrigation_interrowwdith)))))))))))))))))))))))))
+
+plot_data = plot_data %>% mutate(rm_check = ifelse(Hybrid %in% c("DKC6808","DKC6836SC","DKC6836SC(N)"),"rm_check_1",ifelse(Hybrid %in% c("DKC6980","DKC7236SC","DKC7236SC(N)"),"rm_check_2",ifelse(Hybrid %in% c("DKC6625","DKC6648SC","DKC6648SC(N)"),"rm_check_3","rm_check_4"))))
+
+#lsmeans_1 = lsmeans_1 %>% mutate(hybrid_name = ifelse(Hybrid %in% c("75:100:DKC6808","75:75:DKC6808","75:100:DKC6836","75:75:DKC6836","40:100:DKC6836","40:75:DKC6836"),"rm_check_1",ifelse(hybrid__Target_density %in% c("75:100:DKC6980","75:75:DKC6980","75:100:DKC7236","75:75:DKC7236","40:100:DKC7236","40:75:DKC7236"),"rm_check_2",ifelse(hybrid__Target_density %in% c("75:100:DKC6625","75:75:DKC6625","75:100:DKC6648","75:75:DKC6648","40:100:DKC6648","40:75:DKC6648"),"rm_check_3","rm_check_4"))))
+
+
+plot_data = plot_data %>% unite(hybrid__interrow_cm_plot,Hybrid,interrow_width, sep="_",remove=F)
+
+plot_lsmeans=ggplot(plot_data,aes(reorder(hybrid_irrigation_rowspacing,-emmean),emmean, fill=Irrigation))+geom_bar(stat="identity")+xlab("Hybrid_irrigation(%)_interrowwdith(cm)")+ylab(" LSMeans Dry yield (t/ha)")+
+  #theme_classic() + 
+  theme( axis.text = element_text( size = 10 ),
+         axis.text.x = element_text(angle=90, size = 10 ),
+         axis.title = element_text( size = 10, face = "bold" ),strip.text = element_text(size = 13, face = 'bold') ) +
+     geom_text(aes(label=round(emmean,2)), position=pd, vjust=0.05,hjust=0.5, size=3)+ theme(axis.text.x = element_text(  vjust = 0.5, hjust=1))+
+  geom_errorbar(aes(ymin=emmean-SE, ymax=emmean+SE), width=.2,
+                 position=position_dodge(.9)) 
+#+geom_text(aes(label = .group, y = 5, group = Hybrid), vjust = -0.2, 
+           # size = 3, position = position_dodge(width = 0.8))
+print(plot_lsmeans)
+
+plot_lsmeans=ggplot(plot_data,aes(hybrid_irrigation_rowspacing,emmean, fill=.group))+geom_bar(stat="identity")+xlab("Hybrid_irrigation(%)_interrowwdith(cm)")+ylab(" LSMeans Dry yield (t/ha)")+
+  #theme_classic() + 
+  theme( axis.text = element_text( size = 10 ),
+         axis.text.x = element_text(angle=90, size = 10 ),
+         axis.title = element_text( size = 10, face = "bold" ),strip.text = element_text(size = 13, face = 'bold') ) +
+     geom_text(aes(label=round(emmean,2)), position=pd, vjust=0.05,hjust=0.5, size=3)+ theme(axis.text.x = element_text(  vjust = 0.5, hjust=1))+
+  geom_errorbar(aes(ymin=emmean-SE, ymax=emmean+SE), width=.2,
+                 position=position_dodge(.9)) 
+#+geom_text(aes(label = .group, y = 5, group = Hybrid), vjust = -0.2, 
+           # size = 3, position = position_dodge(width = 0.8))
+print(plot_lsmeans)
+
+
+
+
+
+# plot_lsmeans=ggplot(plot_data,aes(reorder(Treatment ,-emmean),emmean, fill=.group))+geom_bar(stat="identity")+xlab("Irrigation - Inter row width (cm)")+ylab(" LSMeans (Dry yield, t/ha)")+
+#   #theme_classic() + 
+#   theme( axis.text = element_text( size = 10 ),
+#          axis.text.x = element_text(angle=90, size = 10 ),
+#          axis.title = element_text( size = 10, face = "bold" ),strip.text = element_text(size = 13, face = 'bold') ) +
+#      geom_text(aes(label=round(emmean,2)), position=pd, vjust=0.05,hjust=0.5, size=3)+ theme(axis.text.x = element_text(  vjust = 0.5, hjust=1))+
+#   geom_errorbar(aes(ymin=emmean-SE, ymax=emmean+SE), width=.2,
+#                  position=position_dodge(.9)) +ggtitle("Estimated marginal means for Hybrid (adjusted for density)")+geom_text(aes(label = .group, y = 5), vjust = -0.2, 
+#             size = 3, position = position_dodge(width = 0.8))+ facet_wrap(~Hybrid, scales="free_x")
+# print(plot_lsmeans)
+
+```
+
+```{r echo=F, message=F, warning=F, fig.heigth=10, fig.width=15}
+plot_lsmeans=ggplot(plot_data,aes(hybrid_irrigation_rowspacing,emmean, fill=Irrigation))+geom_bar(stat="identity")+xlab("Hybrid_irrigation(%)_interrowwdith(cm)")+ylab(" LSMeans (Dry yield (t/ha))")+
+  #theme_classic() + 
+  theme( axis.text = element_text( size = 10 ),
+         axis.text.x = element_text(angle=90, size = 10 ),
+         axis.title = element_text( size = 10, face = "bold" ),strip.text = element_text(size = 13, face = 'bold') ) +
+     geom_text(aes(label=round(emmean,2)), position=pd, vjust=0.05,hjust=0.5, size=3)+ theme(axis.text.x = element_text(  vjust = 0.5, hjust=1))+
+  geom_errorbar(aes(ymin=emmean-SE, ymax=emmean+SE), width=.2,
+                 position=position_dodge(.9)) +geom_text(aes(label = .group, y = 2, group = hybrid_irrigation_rowspacing), vjust = -0.2, 
+            size = 3, position = position_dodge(width = 0.8))+facet_grid(~rm_check, scales="free_x")
+
+#+facet_grid(~Hybrid, scales="free_x")
+print(plot_lsmeans)
+```
+
+# Statistical analysis using 2024 and 2025 data - (Density & plot uniformity impact)
+
+```{r echo=F, message=F, warning=F}
+
+ssc_data_1 = read_excel("/mnt/data/Copy of SSC_2025_water_Naha_1.xlsx", sheet = 2)
+
+names(ssc_data_1)[9] = "target_density"
+names(ssc_data_1)[10] = "interrow_width"
+names(ssc_data_1)[15] = "harvest_density"
+names(ssc_data_1)[21] = "dry_yield"
+names(ssc_data_1)[16] = "plot_uniformity"
+#ssc_data_1 = ssc_data_1 %>% mutate(Hybrid  = ifelse(Hybrid %in% c("DKC6836SC(N)", "DKC6836SC_40cm"),"DKC6836SC(N)",ifelse(Hybrid %in% c("DKC7236SC(N)", "DKC7236SC_40cm"),"DKC7236SC(N)",ifelse(Hybrid %in% c( "ET6641XYZ(N)", "ET6641SC_40cm","ET6641SC"),"ET6641XYZ(N)",ifelse(Hybrid %in% c( "DKC6648SC_40cm", "DKC6648SC","DKC6648SC(N)"),"DKC6648SC(N)",Hybrid)))))
+
+ssc_data_1 = ssc_data_1 %>% mutate(Hybrid  = ifelse(Hybrid %in% c("DKC6836SC(N)", "DKC6836SC_40cm"),"DKC6836SC",ifelse(Hybrid %in% c("DKC7236SC(N)", "DKC7236SC_40cm"),"DKC7236SC",ifelse(Hybrid %in% c( "ET6641XYZ(N)", "ET6641SC_40cm","ET6641SC"),"ET6641XYZ",ifelse(Hybrid %in% c( "DKC6648SC_40cm", "DKC6648SC","DKC6648SC(N)"),"DKC6648SC",Hybrid)))))
+
+ssc_hybrids = c("EW6846XKL1" ,"EW6015XKL1","EW6436XKL1","EW6650XKP1","EW6526XKL1","EW6846","EW6436","DKC6836SC","DKC7236SC","ET6641SC","DKC6648SC","ET6641XYZ") 
+ssc_data_1 = ssc_data_1 %>% mutate(hybrid_type = ifelse(Hybrid %in% ssc_hybrids, "ssc","tall"))
+
+
+ssc_data_1 = ssc_data_1 %>% mutate(Irrigation  = ifelse(Irrigation %in% c(1.00, 100.00),1,ifelse(Irrigation %in% c(0.75, 75.00),0.75,NA)))
+
+ssc_data_1$Irrigation = as.factor(ssc_data_1$Irrigation)
+
+ssc_data_1 = ssc_data_1 %>% unite(hybrid_irrigation_interrowwdith,Hybrid,Irrigation,interrow_width, sep="_",remove=F)
+
+ssc_data_1 = filter(ssc_data_1, !hybrid_irrigation_interrowwdith %in% c("ET6641XYZ(N)_1_75","ET6641XYZ(N)_0.75_75"))
+
+```
+
+
+
+
+```{r echo=T, message=F, warning=F}
+# Center harvest density for better interpretation in models
+data = ssc_data_1
+
+#data = filter(data, plot_uniformity<7)
+data$harvest_density_c <- scale(data$harvest_density, center = TRUE, scale = FALSE)[,1]
+data$plot_uniformity_c <- scale(data$plot_uniformity, center = TRUE, scale = FALSE)[,1]
+
+# First fit a full model to assess density effects
+# Using split-split plot design structure with proper error terms
+model <- lmer(dry_yield ~ as.factor(Irrigation) * as.factor(interrow_width) * as.factor(Hybrid)  +harvest_density_c+plot_uniformity_c+
+             (1|Field/Replicates) +                    # Block effect
+             (1|Field/Replicates:Irrigation) +         # Main plot error (irrigation)
+             (1|Field/Replicates:Irrigation:interrow_width),  # Sub-plot error
+           data = data)
+
+# Check model assumptions
+qqnorm(resid(model))
+qqline(resid(model))
+plot(model)
+Anova(model, type = 3)
+```
+
+### Treatment Means - After Adjustmust for Density
+
+- Estimated marginal means for irrigation (adjusted for density)
+
+- Estimated marginal means for row spacing (adjusted for density)
+
+- Irrigation × Row spacing interaction
+
+- Hybrid Analysis
+
+- Irrigation * interrow_width * Hybrid interaction
+
+```{r echo=F, message=F, warning=F}
+# ==========================================
+# 3. Treatment Means Adjusted for Density
+# ==========================================
+
+# Estimated marginal means for irrigation (adjusted for density)
+emm_irrig <- emmeans(model, ~ Irrigation, at = list(harvest_density_c = 0))
+#print(emm_irrig)
+#pairs(emm_irrig)
+emm_irrig= cld(emm_irrig, Letters = letters, adjust = "tukey")
+emm_irrig = as.data.frame(emm_irrig)
+pd <- position_dodge(0.1)
+plot_lsmeans=ggplot(emm_irrig,aes(reorder(Irrigation ,-emmean),emmean, fill=.group))+geom_bar(stat="identity")+xlab("Hybrid")+ylab(" LSMeans (Dry yield, t/ha)")+
+  #theme_classic() + 
+  theme( axis.text = element_text( size = 10 ),
+         axis.text.x = element_text(angle=90, size = 10 ),
+         axis.title = element_text( size = 10, face = "bold" ),strip.text = element_text(size = 13, face = 'bold') ) +
+     geom_text(aes(label=round(emmean,2)), position=pd, vjust=0.05,hjust=0.5, size=3)+ theme(axis.text.x = element_text(  vjust = 0.5, hjust=1))+
+  geom_errorbar(aes(ymin=emmean-SE, ymax=emmean+SE), width=.2,
+                 position=position_dodge(.9)) +ggtitle("Estimated marginal means for irrigation (adjusted for density)")+geom_text(aes(label = .group, y = 5), vjust = -0.2, 
+            size = 3, position = position_dodge(width = 0.8))
+#print(plot_lsmeans)
+
+
+
+# Estimated marginal means for row spacing (adjusted for density)
+emm_row <- emmeans(model, ~ interrow_width, at = list(harvest_density_c = 0))
+#print(emm_row)
+#pairs(emm_row)
+emm_row=cld(emm_row, Letters = letters, adjust = "tukey")
+
+emm_row = as.data.frame(emm_row)
+
+plot_lsmeans=ggplot(emm_row,aes(reorder(interrow_width ,-emmean),emmean, fill=.group))+geom_bar(stat="identity")+xlab("Hybrid")+ylab(" LSMeans (Dry yield, t/ha)")+
+  #theme_classic() + 
+  theme( axis.text = element_text( size = 10 ),
+         axis.text.x = element_text(angle=90, size = 10 ),
+         axis.title = element_text( size = 10, face = "bold" ),strip.text = element_text(size = 13, face = 'bold') ) +
+     geom_text(aes(label=round(emmean,2)), position=pd, vjust=0.05,hjust=0.5, size=3)+ theme(axis.text.x = element_text(  vjust = 0.5, hjust=1))+
+  geom_errorbar(aes(ymin=emmean-SE, ymax=emmean+SE), width=.2,
+                 position=position_dodge(.9)) +ggtitle("Estimated marginal means for row spacing (adjusted for density)")+geom_text(aes(label = .group, y = 5), vjust = -0.2, 
+            size = 3, position = position_dodge(width = 0.8))
+#print(plot_lsmeans)
+
+
+# Irrigation × Row spacing interaction
+emm_irrig_row <- emmeans(model, ~ Irrigation * interrow_width, at = list(harvest_density_c = 0))
+#print(emm_irrig_row)
+#pairs(emm_irrig_row, by = "Irrigation")
+emm_irrig_row=cld(emm_irrig_row, Letters = letters, adjust = "tukey")
+
+emm_irrig_row = as.data.frame(emm_irrig_row)
+
+plot_lsmeans=ggplot(emm_irrig_row,aes(reorder(Irrigation ,-emmean),emmean, fill=.group))+geom_bar(stat="identity")+xlab("Hybrid")+ylab(" LSMeans (Dry yield, t/ha)")+
+  #theme_classic() + 
+  theme( axis.text = element_text( size = 10 ),
+         axis.text.x = element_text(angle=90, size = 10 ),
+         axis.title = element_text( size = 10, face = "bold" ),strip.text = element_text(size = 13, face = 'bold') ) + facet_wrap(~interrow_width)+
+     geom_text(aes(label=round(emmean,2)), position=pd, vjust=0.05,hjust=0.5, size=3)+ theme(axis.text.x = element_text(  vjust = 0.5, hjust=1))+
+  geom_errorbar(aes(ymin=emmean-SE, ymax=emmean+SE), width=.2,
+                 position=position_dodge(.9)) +ggtitle("Estimated marginal means for Irrigation × Row spacing interaction (adjusted for density)")+geom_text(aes(label = .group, y = 5), vjust = -0.2, 
+            size = 3, position = position_dodge(width = 0.8))
+#print(plot_lsmeans)
+
+# ==========================================
+# 4. Hybrid Analysis
+# ==========================================
+
+# Get adjusted means for each hybrid
+emm_hybrid <- emmeans(model, ~ Hybrid, at = list(harvest_density_c = 0))
+#print(emm_hybrid)
+emm_hybrid=cld(emm_hybrid, Letters = letters, adjust = "tukey")
+
+emm_hybrid = as.data.frame(emm_hybrid)
+
+plot_lsmeans=ggplot(emm_hybrid,aes(reorder(Hybrid ,-emmean),emmean, fill=.group))+geom_bar(stat="identity")+xlab("Hybrid")+ylab(" LSMeans (Dry yield, t/ha)")+
+  #theme_classic() + 
+  theme( axis.text = element_text( size = 10 ),
+         axis.text.x = element_text(angle=90, size = 10 ),
+         axis.title = element_text( size = 10, face = "bold" ),strip.text = element_text(size = 13, face = 'bold') ) +
+     geom_text(aes(label=round(emmean,2)), position=pd, vjust=0.05,hjust=0.5, size=3)+ theme(axis.text.x = element_text(  vjust = 0.5, hjust=1))+
+  geom_errorbar(aes(ymin=emmean-SE, ymax=emmean+SE), width=.2,
+                 position=position_dodge(.9)) +ggtitle("Estimated marginal means for Hybrid (adjusted for density)")+geom_text(aes(label = .group, y = 5), vjust = -0.2, 
+            size = 3, position = position_dodge(width = 0.8))
+#print(plot_lsmeans)
+
+
+
+# ==========================================
+# 5. Specific Treatment Combinations
+# ==========================================
+
+# Three-way interaction
+emm_all <- emmeans(model, 
+                   ~ Irrigation * interrow_width * Hybrid, 
+                  at = list(harvest_density_c = 0))
+emm_all=cld(emm_all, Letters = letters, adjust = "tukey")
+
+# Plot top combinations
+plot_data <- as.data.frame(emm_all)
+plot_data$Treatment <- paste(plot_data$Irrigation, plot_data$interrow_width, "cm")
+
+
+plot_data = filter(plot_data,!is.na(emmean))
+
+plot_data = plot_data %>% unite(hybrid_irrigation_interrowwdith,Hybrid,Irrigation,interrow_width, sep="_",remove=F)
+
+
+
+```
+
+Hybrids:
+
+- DKC6808 vs EW6436XKLZ = DKC6836SC 
+- DKC6980 vs EW6846XKLZ = DKC7236SC 
+- DKC6625 vs EX6658XKLZ = DKC6648SC 
+- Isogenic: ET6641XKYZ compared to DKC6503  
+
+
+
+```{r echo=F, message=F, warning=F, fig.heigth=10, fig.width=10}
+plot_data = plot_data %>% mutate(hybrid_irrigation_rowspacing = ifelse(hybrid_irrigation_interrowwdith == "DKC6808_0.75_75","01_DKC6808_75%_75cm",ifelse(hybrid_irrigation_interrowwdith == "DKC6808_1_75","02_DKC6808_100%_75cm",ifelse(hybrid_irrigation_interrowwdith == "DKC6836SC_0.75_75","03_DKC6836SC_75%_75cm",ifelse(hybrid_irrigation_interrowwdith == "DKC6836SC_1_75","04_DKC6836SC_100%_75cm",ifelse(hybrid_irrigation_interrowwdith == "DKC6836SC_0.75_40","05_DKC6836SC_75%_40cm",ifelse(hybrid_irrigation_interrowwdith == "DKC6836SC_1_40","06_DKC6836SC_100%_40cm",ifelse(hybrid_irrigation_interrowwdith == "DKC6980_0.75_75","07_DKC6980_75%_75cm",ifelse(hybrid_irrigation_interrowwdith == "DKC6980_1_75","08_DKC6980_100%_75cm",ifelse(hybrid_irrigation_interrowwdith == "DKC7236SC_0.75_75","09_DKC7236SC_75%_75cm",ifelse(hybrid_irrigation_interrowwdith == "DKC7236SC_1_75","10_DKC7236SC_100%_75cm",ifelse(hybrid_irrigation_interrowwdith == "DKC7236SC_0.75_40","11_DKC7236SC_75%_40cm",ifelse(hybrid_irrigation_interrowwdith == "DKC7236SC_1_40","12_DKC7236SC_100%_40cm",ifelse(hybrid_irrigation_interrowwdith == "DKC6625_0.75_75","13_DKC6625_75%_75cm",ifelse(hybrid_irrigation_interrowwdith == "DKC6625_1_75","14_DKC6625_100%_75cm",ifelse(hybrid_irrigation_interrowwdith == "DKC6648SC_0.75_75","15_DKC6648SC_75%_75cm",ifelse(hybrid_irrigation_interrowwdith == "DKC6648SC_1_75","16_DKC6648SC_100%_75cm",ifelse(hybrid_irrigation_interrowwdith == "DKC6648SC_0.75_40","17_DKC6648SC_75%_40cm",ifelse(hybrid_irrigation_interrowwdith == "DKC6648SC_1_40","18_DKC6648SC_100%_40cm",ifelse(hybrid_irrigation_interrowwdith == "DKC6503_0.75_75","19_DKC6503_75%_75cm",ifelse(hybrid_irrigation_interrowwdith == "DKC6503_1_75","20_DKC6503_100%_75cm",ifelse(hybrid_irrigation_interrowwdith == "ET6641XYZ_0.75_75","21_ET6641XYZ:75%:75cm",ifelse(hybrid_irrigation_interrowwdith == "ET6641XYZ_1_75","22_ET6641XYZ:100%:75cm",ifelse(hybrid_irrigation_interrowwdith == "ET6641XYZ_0.75_40","23_ET6641XYZ:75%:40cm",ifelse(hybrid_irrigation_interrowwdith == "ET6641XYZ_1_40","24_ET6641XYZ:100%:40cm",hybrid_irrigation_interrowwdith)))))))))))))))))))))))))
+
+plot_data = plot_data %>% mutate(rm_check = ifelse(Hybrid %in% c("DKC6808","DKC6836SC","DKC6836SC(N)"),"rm_check_1",ifelse(Hybrid %in% c("DKC6980","DKC7236SC","DKC7236SC(N)"),"rm_check_2",ifelse(Hybrid %in% c("DKC6625","DKC6648SC","DKC6648SC(N)"),"rm_check_3","rm_check_4"))))
+
+#lsmeans_1 = lsmeans_1 %>% mutate(hybrid_name = ifelse(Hybrid %in% c("75:100:DKC6808","75:75:DKC6808","75:100:DKC6836","75:75:DKC6836","40:100:DKC6836","40:75:DKC6836"),"rm_check_1",ifelse(hybrid__Target_density %in% c("75:100:DKC6980","75:75:DKC6980","75:100:DKC7236","75:75:DKC7236","40:100:DKC7236","40:75:DKC7236"),"rm_check_2",ifelse(hybrid__Target_density %in% c("75:100:DKC6625","75:75:DKC6625","75:100:DKC6648","75:75:DKC6648","40:100:DKC6648","40:75:DKC6648"),"rm_check_3","rm_check_4"))))
+
+
+plot_data = plot_data %>% unite(hybrid__interrow_cm_plot,Hybrid,interrow_width, sep="_",remove=F)
+
+plot_lsmeans=ggplot(plot_data,aes(reorder(hybrid_irrigation_rowspacing,-emmean),emmean, fill=Irrigation))+geom_bar(stat="identity")+xlab("Hybrid_irrigation(%)_interrowwdith(cm)")+ylab(" LSMeans Dry yield (t/ha)")+
+  #theme_classic() + 
+  theme( axis.text = element_text( size = 10 ),
+         axis.text.x = element_text(angle=90, size = 10 ),
+         axis.title = element_text( size = 10, face = "bold" ),strip.text = element_text(size = 13, face = 'bold') ) +
+     geom_text(aes(label=round(emmean,2)), position=pd, vjust=0.05,hjust=0.5, size=3)+ theme(axis.text.x = element_text(  vjust = 0.5, hjust=1))+
+  geom_errorbar(aes(ymin=emmean-SE, ymax=emmean+SE), width=.2,
+                 position=position_dodge(.9)) +ggtitle("Statistical analysis of yield (t/ha) across 2 years of trial data")
+#+geom_text(aes(label = .group, y = 5, group = Hybrid), vjust = -0.2, 
+           # size = 3, position = position_dodge(width = 0.8))
+print(plot_lsmeans)
+
+plot_lsmeans=ggplot(plot_data,aes(hybrid_irrigation_rowspacing,emmean, fill=.group))+geom_bar(stat="identity")+xlab("Hybrid_irrigation(%)_interrowwdith(cm)")+ylab(" LSMeans Dry yield (t/ha)")+
+  #theme_classic() + 
+  theme( axis.text = element_text( size = 10 ),
+         axis.text.x = element_text(angle=90, size = 10 ),
+         axis.title = element_text( size = 10, face = "bold" ),strip.text = element_text(size = 13, face = 'bold') ) +
+     geom_text(aes(label=round(emmean,2)), position=pd, vjust=0.05,hjust=0.5, size=3)+ theme(axis.text.x = element_text(  vjust = 0.5, hjust=1))+
+  geom_errorbar(aes(ymin=emmean-SE, ymax=emmean+SE), width=.2,
+                 position=position_dodge(.9)) +ggtitle("Statistical analysis of yield (t/ha) across 2 years of trial data")
+#+geom_text(aes(label = .group, y = 5, group = Hybrid), vjust = -0.2, 
+           # size = 3, position = position_dodge(width = 0.8))
+print(plot_lsmeans)
+
+
+
+
+
+# plot_lsmeans=ggplot(plot_data,aes(reorder(Treatment ,-emmean),emmean, fill=.group))+geom_bar(stat="identity")+xlab("Irrigation - Inter row width (cm)")+ylab(" LSMeans (Dry yield, t/ha)")+
+#   #theme_classic() + 
+#   theme( axis.text = element_text( size = 10 ),
+#          axis.text.x = element_text(angle=90, size = 10 ),
+#          axis.title = element_text( size = 10, face = "bold" ),strip.text = element_text(size = 13, face = 'bold') ) +
+#      geom_text(aes(label=round(emmean,2)), position=pd, vjust=0.05,hjust=0.5, size=3)+ theme(axis.text.x = element_text(  vjust = 0.5, hjust=1))+
+#   geom_errorbar(aes(ymin=emmean-SE, ymax=emmean+SE), width=.2,
+#                  position=position_dodge(.9)) +ggtitle("Estimated marginal means for Hybrid (adjusted for density)")+geom_text(aes(label = .group, y = 5), vjust = -0.2, 
+#             size = 3, position = position_dodge(width = 0.8))+ facet_wrap(~Hybrid, scales="free_x")
+# print(plot_lsmeans)
+
+```
+
+
+```{r echo=F, message=F, warning=F, fig.heigth=10, fig.width=15}
+plot_lsmeans=ggplot(plot_data,aes(hybrid_irrigation_rowspacing,emmean, fill=Irrigation))+geom_bar(stat="identity")+xlab("Hybrid_irrigation(%)_interrowwdith(cm)")+ylab(" LSMeans (Dry yield (t/ha))")+
+  #theme_classic() + 
+  theme( axis.text = element_text( size = 10 ),
+         axis.text.x = element_text(angle=90, size = 10 ),
+         axis.title = element_text( size = 10, face = "bold" ),strip.text = element_text(size = 13, face = 'bold') ) +
+     geom_text(aes(label=round(emmean,2)), position=pd, vjust=0.05,hjust=0.5, size=3)+ theme(axis.text.x = element_text(  vjust = 0.5, hjust=1))+
+  geom_errorbar(aes(ymin=emmean-SE, ymax=emmean+SE), width=.2,
+                 position=position_dodge(.9)) +geom_text(aes(label = .group, y = 2, group = hybrid_irrigation_rowspacing), vjust = -0.2, 
+            size = 2.5, position = position_dodge(width = 0.9))+facet_grid(~rm_check, scales="free_x")+ggtitle("Statistical analysis of yield (t/ha) across 2 years of trial data")
+
+#+facet_grid(~Hybrid, scales="free_x")
+print(plot_lsmeans)
+
+#plotly::ggplotly(plot_lsmeans)
+```
+
+
+# Statistical analysis 2024 & 2025: SSC vs Tall (Density & plot uniformity impact)
+
+```{r echo=F, message=F, warning=F}
+
+ssc_data_1 = read_excel("/mnt/data/Copy of SSC_2025_water_Naha_1.xlsx", sheet = 2)
+
+names(ssc_data_1)[9] = "target_density"
+names(ssc_data_1)[10] = "interrow_width"
+names(ssc_data_1)[15] = "harvest_density"
+names(ssc_data_1)[21] = "dry_yield"
+names(ssc_data_1)[16] = "plot_uniformity"
+
+#ssc_data_1 = ssc_data_1 %>% mutate(Hybrid  = ifelse(Hybrid %in% c("DKC6836SC(N)", "DKC6836SC_40cm"),"DKC6836SC(N)",ifelse(Hybrid %in% c("DKC7236SC(N)", "DKC7236SC_40cm"),"DKC7236SC(N)",ifelse(Hybrid %in% c( "ET6641XYZ(N)", "ET6641SC_40cm","ET6641SC"),"ET6641XYZ(N)",ifelse(Hybrid %in% c( "DKC6648SC_40cm", "DKC6648SC","DKC6648SC(N)"),"DKC6648SC(N)",Hybrid)))))
+
+ssc_data_1 = ssc_data_1 %>% mutate(Hybrid  = ifelse(Hybrid %in% c("DKC6836SC(N)", "DKC6836SC_40cm"),"DKC6836SC",ifelse(Hybrid %in% c("DKC7236SC(N)", "DKC7236SC_40cm"),"DKC7236SC",ifelse(Hybrid %in% c( "ET6641XYZ(N)", "ET6641SC_40cm","ET6641SC"),"ET6641XYZ",ifelse(Hybrid %in% c( "DKC6648SC_40cm", "DKC6648SC","DKC6648SC(N)"),"DKC6648SC",Hybrid)))))
+
+ssc_hybrids = c("EW6846XKL1" ,"EW6015XKL1","EW6436XKL1","EW6650XKP1","EW6526XKL1","EW6846","EW6436","DKC6836SC","DKC7236SC","ET6641SC","DKC6648SC","ET6641XYZ") 
+ssc_data_1 = ssc_data_1 %>% mutate(hybrid_type = ifelse(Hybrid %in% ssc_hybrids, "ssc","tall"))
+
+
+ssc_data_1 = ssc_data_1 %>% mutate(Irrigation  = ifelse(Irrigation %in% c(1.00, 100.00),1,ifelse(Irrigation %in% c(0.75, 75.00),0.75,NA)))
+
+ssc_data_1$Irrigation = as.factor(ssc_data_1$Irrigation)
+
+ssc_data_1 = ssc_data_1 %>% unite(hybrid_irrigation_interrowwdith,Hybrid,Irrigation,interrow_width, sep="_",remove=F)
+
+ssc_data_1 = filter(ssc_data_1, !hybrid_irrigation_interrowwdith %in% c("ET6641XYZ(N)_1_75","ET6641XYZ(N)_0.75_75"))
+
+```
+
+
+
+
+```{r echo=T, message=F, warning=F}
+# Center harvest density for better interpretation in models
+data = ssc_data_1
+#data = filter(data, plot_uniformity<6)
+data$harvest_density_c <- scale(data$harvest_density, center = TRUE, scale = FALSE)[,1]
+data$plot_uniformity_c <- scale(data$plot_uniformity, center = TRUE, scale = FALSE)[,1]
+
+# First fit a full model to assess density effects
+# Using split-split plot design structure with proper error terms
+model <- lmer(dry_yield ~ as.factor(Irrigation) * as.factor(interrow_width) * as.factor(hybrid_type)  +harvest_density_c+plot_uniformity_c+
+             (1|Field/Replicates) +                    # Block effect
+             (1|Field/Replicates:Irrigation) +         # Main plot error (irrigation)
+             (1|Field/Replicates:Irrigation:interrow_width),  # Sub-plot error
+           data = data)
+
+# Check model assumptions
+qqnorm(resid(model))
+qqline(resid(model))
+plot(model)
+Anova(model, type = 3)
+```
+
+### Treatment Means - After Adjustmust for Density
+
+- Irrigation * interrow_width * Hybrid interaction (adjusted for density)
+
+```{r echo=F, message=F, warning=F}
+# ==========================================
+# 3. Treatment Means Adjusted for Density
+# ==========================================
+
+# Estimated marginal means for irrigation (adjusted for density)
+emm_irrig <- emmeans(model, ~ Irrigation, at = list(harvest_density_c = 0))
+#print(emm_irrig)
+#pairs(emm_irrig)
+emm_irrig= cld(emm_irrig, Letters = letters, adjust = "tukey")
+emm_irrig = as.data.frame(emm_irrig)
+pd <- position_dodge(0.1)
+plot_lsmeans=ggplot(emm_irrig,aes(reorder(Irrigation ,-emmean),emmean, fill=.group))+geom_bar(stat="identity")+xlab("Hybrid")+ylab(" LSMeans (Dry yield, t/ha)")+
+  #theme_classic() + 
+  theme( axis.text = element_text( size = 10 ),
+         axis.text.x = element_text(angle=90, size = 10 ),
+         axis.title = element_text( size = 10, face = "bold" ),strip.text = element_text(size = 13, face = 'bold') ) +
+     geom_text(aes(label=round(emmean,2)), position=pd, vjust=0.05,hjust=0.5, size=3)+ theme(axis.text.x = element_text(  vjust = 0.5, hjust=1))+
+  geom_errorbar(aes(ymin=emmean-SE, ymax=emmean+SE), width=.2,
+                 position=position_dodge(.9)) +ggtitle("Estimated marginal means for irrigation (adjusted for density)")+geom_text(aes(label = .group, y = 5), vjust = -0.2, 
+            size = 3, position = position_dodge(width = 0.8))
+#print(plot_lsmeans)
+
+
+
+# Estimated marginal means for row spacing (adjusted for density)
+emm_row <- emmeans(model, ~ interrow_width, at = list(harvest_density_c = 0))
+#print(emm_row)
+#pairs(emm_row)
+emm_row=cld(emm_row, Letters = letters, adjust = "tukey")
+
+emm_row = as.data.frame(emm_row)
+
+plot_lsmeans=ggplot(emm_row,aes(reorder(interrow_width ,-emmean),emmean, fill=.group))+geom_bar(stat="identity")+xlab("Hybrid")+ylab(" LSMeans (Dry yield, t/ha)")+
+  #theme_classic() + 
+  theme( axis.text = element_text( size = 10 ),
+         axis.text.x = element_text(angle=90, size = 10 ),
+         axis.title = element_text( size = 10, face = "bold" ),strip.text = element_text(size = 13, face = 'bold') ) +
+     geom_text(aes(label=round(emmean,2)), position=pd, vjust=0.05,hjust=0.5, size=3)+ theme(axis.text.x = element_text(  vjust = 0.5, hjust=1))+
+  geom_errorbar(aes(ymin=emmean-SE, ymax=emmean+SE), width=.2,
+                 position=position_dodge(.9)) +ggtitle("Estimated marginal means for row spacing (adjusted for density)")+geom_text(aes(label = .group, y = 5), vjust = -0.2, 
+            size = 3, position = position_dodge(width = 0.8))
+#print(plot_lsmeans)
+
+
+# Irrigation × Row spacing interaction
+emm_irrig_row <- emmeans(model, ~ Irrigation * interrow_width, at = list(harvest_density_c = 0))
+#print(emm_irrig_row)
+#pairs(emm_irrig_row, by = "Irrigation")
+emm_irrig_row=cld(emm_irrig_row, Letters = letters, adjust = "tukey")
+
+emm_irrig_row = as.data.frame(emm_irrig_row)
+
+plot_lsmeans=ggplot(emm_irrig_row,aes(reorder(Irrigation ,-emmean),emmean, fill=.group))+geom_bar(stat="identity")+xlab("Hybrid")+ylab(" LSMeans (Dry yield, t/ha)")+
+  #theme_classic() + 
+  theme( axis.text = element_text( size = 10 ),
+         axis.text.x = element_text(angle=90, size = 10 ),
+         axis.title = element_text( size = 10, face = "bold" ),strip.text = element_text(size = 13, face = 'bold') ) + facet_wrap(~interrow_width)+
+     geom_text(aes(label=round(emmean,2)), position=pd, vjust=0.05,hjust=0.5, size=3)+ theme(axis.text.x = element_text(  vjust = 0.5, hjust=1))+
+  geom_errorbar(aes(ymin=emmean-SE, ymax=emmean+SE), width=.2,
+                 position=position_dodge(.9)) +ggtitle("Estimated marginal means for Irrigation × Row spacing interaction (adjusted for density)")+geom_text(aes(label = .group, y = 5), vjust = -0.2, 
+            size = 3, position = position_dodge(width = 0.8))
+#print(plot_lsmeans)
+
+# ==========================================
+# 4. Hybrid Analysis
+# ==========================================
+
+# Get adjusted means for each hybrid
+emm_hybrid <- emmeans(model, ~ hybrid_type, at = list(harvest_density_c = 0))
+#print(emm_hybrid)
+emm_hybrid=cld(emm_hybrid, Letters = letters, adjust = "tukey")
+
+emm_hybrid = as.data.frame(emm_hybrid)
+
+plot_lsmeans=ggplot(emm_hybrid,aes(reorder(hybrid_type ,-emmean),emmean, fill=.group))+geom_bar(stat="identity")+xlab("Hybrid")+ylab(" LSMeans (Dry yield, t/ha)")+
+  #theme_classic() + 
+  theme( axis.text = element_text( size = 10 ),
+         axis.text.x = element_text(angle=90, size = 10 ),
+         axis.title = element_text( size = 10, face = "bold" ),strip.text = element_text(size = 13, face = 'bold') ) +
+     geom_text(aes(label=round(emmean,2)), position=pd, vjust=0.05,hjust=0.5, size=3)+ theme(axis.text.x = element_text(  vjust = 0.5, hjust=1))+
+  geom_errorbar(aes(ymin=emmean-SE, ymax=emmean+SE), width=.2,
+                 position=position_dodge(.9)) +ggtitle("Estimated marginal means for Hybrid (adjusted for density)")+geom_text(aes(label = .group, y = 5), vjust = -0.2, 
+            size = 3, position = position_dodge(width = 0.8))
+#print(plot_lsmeans)
+
+
+
+# ==========================================
+# 5. Specific Treatment Combinations
+# ==========================================
+
+# Three-way interaction
+emm_all <- emmeans(model, 
+                   ~ Irrigation * interrow_width * hybrid_type, 
+                  at = list(harvest_density_c = 0))
+emm_all=cld(emm_all, Letters = letters, adjust = "tukey")
+
+# Plot top combinations
+plot_data <- as.data.frame(emm_all)
+plot_data$Treatment <- paste(plot_data$Irrigation, plot_data$interrow_width, "cm")
+
+
+plot_data = filter(plot_data,!is.na(emmean))
+
+plot_data = plot_data %>% unite(hybrid_irrigation_interrowwdith,hybrid_type,Irrigation,interrow_width, sep="_",remove=F)
+
+
+
+```
+
+Hybrids:
+
+- DKC6808 vs EW6436XKLZ = DKC6836SC 
+- DKC6980 vs EW6846XKLZ = DKC7236SC 
+- DKC6625 vs EX6658XKLZ = DKC6648SC 
+- Isogenic: ET6641XKYZ compared to DKC6503  
+
+
+
+```{r echo=F, message=F, warning=F, fig.heigth=10, fig.width=10}
+plot_data = plot_data %>% mutate(hybrid_irrigation_rowspacing = ifelse(hybrid_irrigation_interrowwdith == "DKC6808_0.75_75","01_DKC6808_75%_75cm",ifelse(hybrid_irrigation_interrowwdith == "DKC6808_1_75","02_DKC6808_100%_75cm",ifelse(hybrid_irrigation_interrowwdith == "DKC6836SC_0.75_75","03_DKC6836SC_75%_75cm",ifelse(hybrid_irrigation_interrowwdith == "DKC6836SC_1_75","04_DKC6836SC_100%_75cm",ifelse(hybrid_irrigation_interrowwdith == "DKC6836SC_0.75_40","05_DKC6836SC_75%_40cm",ifelse(hybrid_irrigation_interrowwdith == "DKC6836SC_1_40","06_DKC6836SC_100%_40cm",ifelse(hybrid_irrigation_interrowwdith == "DKC6980_0.75_75","07_DKC6980_75%_75cm",ifelse(hybrid_irrigation_interrowwdith == "DKC6980_1_75","08_DKC6980_100%_75cm",ifelse(hybrid_irrigation_interrowwdith == "DKC7236SC_0.75_75","09_DKC7236SC_75%_75cm",ifelse(hybrid_irrigation_interrowwdith == "DKC7236SC_1_75","10_DKC7236SC_100%_75cm",ifelse(hybrid_irrigation_interrowwdith == "DKC7236SC_0.75_40","11_DKC7236SC_75%_40cm",ifelse(hybrid_irrigation_interrowwdith == "DKC7236SC_1_40","12_DKC7236SC_100%_40cm",ifelse(hybrid_irrigation_interrowwdith == "DKC6625_0.75_75","13_DKC6625_75%_75cm",ifelse(hybrid_irrigation_interrowwdith == "DKC6625_1_75","14_DKC6625_100%_75cm",ifelse(hybrid_irrigation_interrowwdith == "DKC6648SC_0.75_75","15_DKC6648SC_75%_75cm",ifelse(hybrid_irrigation_interrowwdith == "DKC6648SC_1_75","16_DKC6648SC_100%_75cm",ifelse(hybrid_irrigation_interrowwdith == "DKC6648SC_0.75_40","17_DKC6648SC_75%_40cm",ifelse(hybrid_irrigation_interrowwdith == "DKC6648SC_1_40","18_DKC6648SC_100%_40cm",ifelse(hybrid_irrigation_interrowwdith == "DKC6503_0.75_75","19_DKC6503_75%_75cm",ifelse(hybrid_irrigation_interrowwdith == "DKC6503_1_75","20_DKC6503_100%_75cm",ifelse(hybrid_irrigation_interrowwdith == "ET6641XYZ_0.75_75","21_ET6641XYZ:75%:75cm",ifelse(hybrid_irrigation_interrowwdith == "ET6641XYZ_1_75","22_ET6641XYZ:100%:75cm",ifelse(hybrid_irrigation_interrowwdith == "ET6641XYZ_0.75_40","23_ET6641XYZ:75%:40cm",ifelse(hybrid_irrigation_interrowwdith == "ET6641XYZ_1_40","24_ET6641XYZ:100%:40cm",hybrid_irrigation_interrowwdith)))))))))))))))))))))))))
+
+
+#lsmeans_1 = lsmeans_1 %>% mutate(hybrid_name = ifelse(Hybrid %in% c("75:100:DKC6808","75:75:DKC6808","75:100:DKC6836","75:75:DKC6836","40:100:DKC6836","40:75:DKC6836"),"rm_check_1",ifelse(hybrid__Target_density %in% c("75:100:DKC6980","75:75:DKC6980","75:100:DKC7236","75:75:DKC7236","40:100:DKC7236","40:75:DKC7236"),"rm_check_2",ifelse(hybrid__Target_density %in% c("75:100:DKC6625","75:75:DKC6625","75:100:DKC6648","75:75:DKC6648","40:100:DKC6648","40:75:DKC6648"),"rm_check_3","rm_check_4"))))
+
+
+plot_data = plot_data %>% unite(hybrid__interrow_cm_plot,hybrid_type,interrow_width, sep="_",remove=F)
+
+plot_lsmeans=ggplot(plot_data,aes(reorder(hybrid_irrigation_rowspacing,-emmean),emmean, fill=Irrigation))+geom_bar(stat="identity")+xlab("Hybrid_irrigation(%)_interrowwdith(cm)")+ylab(" LSMeans Dry yield (t/ha)")+
+  #theme_classic() + 
+  theme( axis.text = element_text( size = 10 ),
+         axis.text.x = element_text(angle=90, size = 10 ),
+         axis.title = element_text( size = 10, face = "bold" ),strip.text = element_text(size = 13, face = 'bold') ) +
+     geom_text(aes(label=round(emmean,2)), position=pd, vjust=0.05,hjust=0.5, size=3)+ theme(axis.text.x = element_text(  vjust = 0.5, hjust=1))+
+  geom_errorbar(aes(ymin=emmean-SE, ymax=emmean+SE), width=.2,
+                 position=position_dodge(.9)) +ggtitle("Statistical analysis of yield (t/ha) across 2 years of trial data")
+#+geom_text(aes(label = .group, y = 5, group = Hybrid), vjust = -0.2, 
+           # size = 3, position = position_dodge(width = 0.8))
+print(plot_lsmeans)
+
+plot_lsmeans=ggplot(plot_data,aes(hybrid_irrigation_rowspacing,emmean, fill=.group))+geom_bar(stat="identity")+xlab("Hybrid_irrigation(%)_interrowwdith(cm)")+ylab(" LSMeans Dry yield (t/ha)")+
+  #theme_classic() + 
+  theme( axis.text = element_text( size = 10 ),
+         axis.text.x = element_text(angle=90, size = 10 ),
+         axis.title = element_text( size = 10, face = "bold" ),strip.text = element_text(size = 13, face = 'bold') ) +
+     geom_text(aes(label=round(emmean,2)), position=pd, vjust=0.05,hjust=0.5, size=3)+ theme(axis.text.x = element_text(  vjust = 0.5, hjust=1))+
+  geom_errorbar(aes(ymin=emmean-SE, ymax=emmean+SE), width=.2,
+                 position=position_dodge(.9))+ggtitle("Statistical analysis of yield (t/ha) across 2 years of trial data") 
+#+geom_text(aes(label = .group, y = 5, group = Hybrid), vjust = -0.2, 
+           # size = 3, position = position_dodge(width = 0.8))
+print(plot_lsmeans)
+
+
+
+
+
+# plot_lsmeans=ggplot(plot_data,aes(reorder(Treatment ,-emmean),emmean, fill=.group))+geom_bar(stat="identity")+xlab("Irrigation - Inter row width (cm)")+ylab(" LSMeans (Dry yield, t/ha)")+
+#   #theme_classic() + 
+#   theme( axis.text = element_text( size = 10 ),
+#          axis.text.x = element_text(angle=90, size = 10 ),
+#          axis.title = element_text( size = 10, face = "bold" ),strip.text = element_text(size = 13, face = 'bold') ) +
+#      geom_text(aes(label=round(emmean,2)), position=pd, vjust=0.05,hjust=0.5, size=3)+ theme(axis.text.x = element_text(  vjust = 0.5, hjust=1))+
+#   geom_errorbar(aes(ymin=emmean-SE, ymax=emmean+SE), width=.2,
+#                  position=position_dodge(.9)) +ggtitle("Estimated marginal means for Hybrid (adjusted for density)")+geom_text(aes(label = .group, y = 5), vjust = -0.2, 
+#             size = 3, position = position_dodge(width = 0.8))+ facet_wrap(~Hybrid, scales="free_x")
+# print(plot_lsmeans)
+
+```
+
+
+```{r echo=F, message=F, warning=F}
+plot_lsmeans=ggplot(plot_data,aes(hybrid_irrigation_rowspacing,emmean, fill=Irrigation))+geom_bar(stat="identity")+xlab("Hybrid_irrigation(%)_interrowwdith(cm)")+ylab(" LSMeans (Dry yield (t/ha))")+
+  #theme_classic() + 
+  theme( axis.text = element_text( size = 10 ),
+         axis.text.x = element_text(angle=90, size = 10 ),
+         axis.title = element_text( size = 10, face = "bold" ),strip.text = element_text(size = 13, face = 'bold') ) +
+     geom_text(aes(label=round(emmean,2)), position=pd, vjust=0.05,hjust=0.5, size=3)+ theme(axis.text.x = element_text(  vjust = 0.5, hjust=1))+
+  geom_errorbar(aes(ymin=emmean-SE, ymax=emmean+SE), width=.2,
+                 position=position_dodge(.9)) +geom_text(aes(label = .group, y = 2, group = hybrid_irrigation_rowspacing), vjust = -0.2, 
+            size = 2.5, position = position_dodge(width = 0.9))+ggtitle("Statistical analysis of yield (t/ha) across 2 years of trial data")#+facet_grid(~rm_check, scales="free_x")
+
+#+facet_grid(~Hybrid, scales="free_x")
+print(plot_lsmeans)
+
+
+plot_data = plot_data %>% mutate(hybrid__interrow_cm_plot = ifelse(hybrid__interrow_cm_plot == "tall_75","01_TALL_75cm",ifelse(hybrid__interrow_cm_plot == "TALL_75:75" ,"02_TALL_75",ifelse(hybrid__interrow_cm_plot ==  "ssc_75","02_SSC_75cm",ifelse(hybrid__interrow_cm_plot == "SSC_75:75","04_SSC_75",ifelse(hybrid__interrow_cm_plot == "ssc_40","03_SSC_40cm",ifelse(hybrid__interrow_cm_plot == "SSC_40:75","06_SSC_40",hybrid__interrow_cm_plot)))))))
+
+plot_lsmeans=ggplot(plot_data,aes(hybrid_irrigation_rowspacing,emmean, fill=Irrigation))+geom_bar(stat="identity")+xlab("Hybrid_irrigation(%)_interrowwdith(cm)")+ylab(" LSMeans (Dry yield (t/ha))")+
+  #theme_classic() + 
+  theme( axis.text = element_text( size = 10 ),
+         axis.text.x = element_text(angle=90, size = 10 ),
+         axis.title = element_text( size = 10, face = "bold" ),strip.text = element_text(size = 13, face = 'bold') ) +
+     geom_text(aes(label=round(emmean,2)), position=pd, vjust=0.05,hjust=0.5, size=3)+ theme(axis.text.x = element_text(  vjust = 0.5, hjust=1))+
+  geom_errorbar(aes(ymin=emmean-SE, ymax=emmean+SE), width=.2,
+                 position=position_dodge(.9)) +geom_text(aes(label = .group, y = 2, group = hybrid_irrigation_rowspacing), vjust = -0.2, 
+            size = 2.5, position = position_dodge(width = 0.9))+facet_grid(~hybrid__interrow_cm_plot, scales="free_x")+ggtitle("Statistical analysis of yield (t/ha) across 2 years of trial data")
+
+#+facet_grid(~Hybrid, scales="free_x")
+print(plot_lsmeans)
+
+
+
+#plotly::ggplotly(plot_lsmeans)
+```
+
+
+
+
