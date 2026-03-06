@@ -1,0 +1,130 @@
+---
+title: "Untitled"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(readr)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+
+ssc_grain = read_csv("/mnt/data/SSC_FACT_trials_grain.csv")
+ssc_grain$protocol = "EME FACT Trials Grain"
+#only locations in italy (20 trials) and spain (24 trials) and none from turkey and portugal
+
+
+ssc_grain_summary = unique(ssc_grain[,c(47,46)])
+table(ssc_grain_summary$FIELD_Country)
+unique(ssc_grain_summary$FIELD_locationName)
+
+ssc_silage = read_csv("/mnt/data/SSC_FACT_trials_silage (2).csv")
+ssc_silage$protocol = "EME FACT Trials Silage"
+
+
+ssc_silage_summary = unique(ssc_silage[,c(48,47)])
+table(ssc_silage_summary$FIELD_Country)
+
+ssc_disease = read_csv("/mnt/data/SSC_disease_management.csv")
+ssc_disease$protocol = "EME Disease Management Nurseries"
+
+
+ssc_disease_summary = unique(ssc_disease[,c(48,47)])
+table(ssc_disease_summary$FIELD_Country)
+
+
+
+```
+
+# Hybrid Classification
+
+
+```{r}
+
+#SSC FACT grain
+ssc_hybrids = c("EW6846XKL1" ,"EW6015XKL1","EW6436XKL1","EW6650XKP1","EW6526XKL1")
+ 
+ssc_grain = ssc_grain %>% mutate(hybrid_type = ifelse(productName %in% ssc_hybrids, "ssc","tall"))
+ 
+library(stringr)
+ssc_grain = ssc_grain %>% mutate(hybrid_brand = ifelse(startsWith(productName,"D"),"dekalb","pcm4"), relative_maturity=ifelse(hybrid_brand=="dekalb",as.numeric(str_sub(productName, 4, 5))+50,as.numeric(str_sub(productName, 3, 4))+50),maturity_group = ifelse(relative_maturity<88,"early",ifelse(relative_maturity>=102,"late","mid")))
+
+#SSC FACT silage
+unique(ssc_disease$productName)
+ssc_silage = ssc_silage %>% mutate(hybrid_type = ifelse(productName %in% ssc_hybrids, "ssc","tall"))
+ 
+library(stringr)
+ssc_silage = ssc_silage %>% mutate(hybrid_brand = ifelse(startsWith(productName,"D"),"dekalb","pcm4"), relative_maturity=ifelse(hybrid_brand=="dekalb",as.numeric(str_sub(productName, 4, 5))+50,as.numeric(str_sub(productName, 3, 4))+50),maturity_group = ifelse(relative_maturity<88,"early",ifelse(relative_maturity>=102,"late","mid")))
+
+#SSC Disease
+
+unique(ssc_disease$productName)
+ssc_disease = ssc_disease %>% mutate(hybrid_type = ifelse(productName %in% ssc_hybrids, "ssc","tall"))
+ 
+library(stringr)
+ssc_disease = ssc_disease %>% mutate(hybrid_brand = ifelse(startsWith(productName,"D"),"dekalb","pcm4"), relative_maturity=ifelse(hybrid_brand=="dekalb",as.numeric(str_sub(productName, 4, 5))+50,as.numeric(str_sub(productName, 3, 4))+50),maturity_group = ifelse(relative_maturity<88,"early",ifelse(relative_maturity>=102,"late","mid")))
+
+#all hybrid classification
+
+hybrid_grain = ssc_grain %>% select(productName,hybrid_type,hybrid_brand,relative_maturity,maturity_group) %>% unique()
+
+hybrid_silage = ssc_silage %>% select(productName,hybrid_type,hybrid_brand,relative_maturity,maturity_group)%>% unique()
+
+hybrid_disease = ssc_disease %>% select(productName,hybrid_type,hybrid_brand,relative_maturity,maturity_group)%>% unique()
+
+hybrid_classification = bind_rows(hybrid_grain,hybrid_silage,hybrid_disease) %>% unique()
+
+write_csv(hybrid_classification,"/mnt/data/SSC_trials_hybrid_classification.csv")
+
+ssc_grain = ssc_grain %>% inner_join(hybrid_classification)
+ssc_silage = ssc_silage %>% inner_join(hybrid_classification)
+ssc_disease = ssc_disease %>% inner_join(hybrid_classification)
+
+#hybrid_classification_summary = hybrid_classification %>% group_by(productName) %>% summarise(protocols = paste(unique(protocol), collpase="; "))
+
+instinct_ssc_grain = filter(ssc_grain,hybrid_type=="ssc")
+#instinct_ssc_grain_all = filter(ssc_grain,)
+instinct_ssc_silage = filter(ssc_silage,hybrid_type=="ssc")
+instinct_ssc_disease = filter(ssc_disease,hybrid_type=="ssc")
+
+write_csv(ssc_grain,"/mnt/data/EMEA_SSC_Grain_MD_FACT_trials_data.csv")
+write_csv(ssc_silage,"/mnt/data/EMEA_SSC_Silage_MD_FACT_trials_data.csv")
+write_csv(ssc_disease,"/mnt/data/EMEA_SSC_disease_management_MD_trials_data.csv")
+```
+
+
+
+#Nitrogen management
+
+```{r}
+nitro = read_csv("/mnt/data/EMEA_SSC_Nitrogen_management_trials_data_summarised.csv")
+
+nitro = nitro %>% unite(plot_id,hybrid,density_seeds_per_ha,nitrogen_quantity,interrow_width_cm,Replicate,sep="_")
+
+write_csv(nitro,"/mnt/data/EMEA_SSC_Nitrogen_management_trials_data_summarised_with_PlotID.csv")
+
+nitro_1 = readxl::read_excel("/mnt/data/BAYER 2022 EXP ALL VARIABLES 3 reps.xlsx")
+
+nitro_1 = filter(nitro_1, VAR!="NA")
+
+nitro_1 = nitro_1 %>% mutate(hybrid = ifelse(VAR=="DKC6836SC","EW6436XKL1",ifelse(VAR=="DKC7236SC","EW6846XKL1",VAR)))
+
+nitro_1 = nitro_1 %>% mutate(density = DS*1000)
+
+
+nitro_1 = nitro_1 %>% unite(plot_id,hybrid,density,NIT,ROW,BLOC,sep="_")
+
+
+
+nitro_1$Protocol = nitro$Protocol[1]
+nitro_1$year = nitro$year[1]
+nitro_1$country = nitro$country[1]
+nitro_1$Trial = nitro$Trial[1]
+nitro_1$Location = nitro$Location[1]
+nitro_1$trial_source = "external"
+nitro_1$Latitude = nitro$Latitude[1]
+nitro_1$Longitude = nitro$Longitude[1]
+
+write_csv(nitro_1,"/mnt/data/EMEA_SSC_Nitrogen_management_trials_external_data.csv")
+```
+
