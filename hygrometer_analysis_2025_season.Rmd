@@ -1,0 +1,1276 @@
+---
+title: "SSC Hygrometer Protocol in France - Comparison between SSC and TALL - Final report"
+author: "Naharajan Lakshmanaperumal, Senior Data Scientist, EMEA Agronomy"
+date: "25.11.2025"
+output:
+  slidy_presentation: default
+  beamer_presentation: default
+  pdf_document: default
+  html_document: default
+  ioslides_presentation: default
+  word_document:
+    reference_docx: south_africa_variety_data_report_final.docx
+always_allow_html: yes
+---
+
+# Contents
+
+<div class="logos"><img src="/mnt/images/emea_md_logo_3.PNG" width="50px" align="right"></div>
+ 
+<div class="logos"><img src="/mnt/images/RZ_EMEA_Sign_Claim_Screen_RGB_on_white (1) (1).png" width="100px" align="right"></div>
+
+
+- Protocol Summary
+
+- Raw data from Soil Moisture Protocol
+
+- Data Consolidation from all locations and addition of new columns
+
+- Exploratory data analysis 
+
+    - Overall data summary
+    
+    - Visualization of time series data using the coefficient normalization method
+
+- Statistical analysis
+  
+
+
+<div class="logos"><img src="/mnt/images/restricted.PNG" width="100px" align="right"></div>
+
+
+# SSC Hygrometer Protocol - Comparison between SSC and TALL systems
+
+
+<div class="logos"><img src="/mnt/images/emea_md_logo_3.PNG" width="50px" align="right"></div>
+ 
+<div class="logos"><img src="/mnt/images/RZ_EMEA_Sign_Claim_Screen_RGB_on_white (1) (1).png" width="100px" align="right"></div>
+
+
+- **Objective**: To compare the air temperature and relative humidity levels at different soil depths between the two hybrid systems of interest - SSC 40cm VS Tall 80cm row spacing.
+
+
+-SSC 40cm: **EZ5936XKPZ 120K density 40cm narrow inter row spacing**    
+
+-Tall 80cm: **DKC5812 85K density 80cm conventional inter row spacing**  
+
+# Raw data from Hygrometer Protocol
+
+- Raw data for 2 protocols in sharepoint site: https://bayergroup.sharepoint.com/:f:/r/sites/006212/Shared%20Documents/MA%C3%8FS/2023/SSC%20-%20SMART%20CORN%20-%20PRECECON/CORHIZE?csf=1&web=1&e=tajaki
+
+
+```{r message=FALSE, warning=FALSE, echo=FALSE}
+library(readr)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+#library(lmerTest)
+#library(multcompView)
+library(readxl)
+library(plotly)
+library(lubridate)
+#library(dygraphs)
+
+#install.packages("lmerTest")
+#install.packages("multcompView")
+
+#DT::datatable(head(start_flex,100), filter="top")
+
+fichier = read_excel("/mnt/data/file_indication_probes_2025.xlsx")
+
+names(fichier)[1] = "year"
+names(fichier)[2] = "plot"
+names(fichier)[3] = "trial"
+names(fichier)[4] = "location"
+names(fichier)[5] = "system"
+names(fichier)[6] = "hybrid"
+names(fichier)[7] = "hybrid_type"
+names(fichier)[8] = "density"
+names(fichier)[9] = "row_spacing_cm"
+names(fichier)[10] = "file_name"
+names(fichier)[11] = "planting_date"
+names(fichier)[12] = "period_analysis"
+names(fichier)[13] = "latitude"
+names(fichier)[14] = "longitude"
+
+fichier = fichier %>% unite(trial_plot, trial, plot, sep="__", remove=F)
+fichier = fichier %>% separate(file_name, into=c("hybrid_type","hybrid_number","hybrid_rowspacing"),sep=" - ",remove=F)
+fichier = fichier %>% unite(trial_system, trial, hybrid_rowspacing, sep="__", remove=F)
+
+#SSC6 (100) 
+#SSC7 (75)
+
+
+planting_files <- list.files(path="/mnt/data/probes_data_2025/",pattern="*.xlsx", full.names=TRUE, recursive=TRUE)
+
+
+planting_files_df = data.frame(full_file_name=planting_files)
+
+planting_files_df = planting_files_df %>% separate(full_file_name, into=c("dir1","dir2","protocol","field","file_n","file_1","file_2"),sep="/",remove=F)
+
+planting_files_df$dir1 = NULL
+planting_files_df$file_n = NULL
+
+planting_files_df = planting_files_df %>% mutate(trial = ifelse(file_1=="SSC6","SSC6 (100)",ifelse(file_1=="SSC7_75","SSC7 (75)",file_1)))
+
+planting_files_df = planting_files_df %>% separate(file_2, into=c("hybrid_type","hybrid_number","hybrid_rowspacing"),sep=" - ",remove=F)
+
+#planting_files_df = planting_files_df %>% unite(trial_plot, trial, plot, sep="__", remove=F)
+
+planting_files_df = planting_files_df %>% unite(trial_system, trial, hybrid_rowspacing, sep="__", remove=F)
+
+planting_files_df = planting_files_df %>% inner_join(fichier)
+
+# planting_points_data_all=data.frame()
+# 
+# #rain guage not there for SSC5 Boumourt, SSC6 _100, 
+# 
+# 
+# for (i in 1:nrow(planting_files_df)){
+#  
+#   #print(planting_files_df[i])
+#   #load(files[i])
+#  
+#   #print(dim(t))
+#  c <- read_excel(planting_files_df$full_file_name[i],skip=2)
+#    start_flex=c
+#    
+#    #glimpse(loc_dataset)
+#    names(start_flex)[2] = "average_moisture"
+# names(start_flex)[3] = "soil_mois_1_10"
+# names(start_flex)[4] = "soil_mois_2_20"
+# names(start_flex)[5] = "soil_mois_3_30"
+# names(start_flex)[6] = "soil_mois_4_40"
+# names(start_flex)[7] = "soil_mois_5_50"
+# names(start_flex)[8] = "soil_mois_6_60"
+# names(start_flex)[9] = "rain_gauge"
+# names(start_flex)[10] = "soil_temp_1_10"
+# names(start_flex)[11] = "soil_temp_2_20"
+# names(start_flex)[12] = "soil_temp_3_30"
+# names(start_flex)[13] = "soil_temp_4_40"
+# names(start_flex)[14] = "soil_temp_5_50"
+# names(start_flex)[15] = "soil_temp_6_60"
+# #start_flex$`Ambient Temperature`= NULL
+# #start_flex$`Relative Humidity`= NULL
+# start_flex$location_name = planting_files_df$location[i]
+# start_flex$location = planting_files_df$location[i]
+# start_flex$hybrid = planting_files_df$hybrid[i]
+# start_flex$interrow_spacing = planting_files_df$row_spacing_cm[i]
+# start_flex$filename = planting_files_df$file_name[i]
+# start_flex$latitude = planting_files_df$latitude[i]
+# start_flex$longitude = planting_files_df$longitude[i]
+# start_flex$sowing_date = planting_files_df$planting_date[i]
+# #start_flex$harvest_date = planting_files_df$harvest_date[i]
+# start_flex$system = planting_files_df$system[i]
+# start_flex$density = planting_files_df$density[i]
+# start_flex$hybrid_type = planting_files_df$hybrid_type[i]
+# start_flex = filter(start_flex, !is.na(soil_mois_1_10))
+# 
+#      planting_points_data_all = bind_rows(planting_points_data_all, start_flex)
+# 
+# }
+# 
+# hygrometer_all = planting_points_data_all[,c(1,16:28)]
+# 
+# hygrometer_all_1 = filter(hygrometer_all, !is.na(`Ambient Temperature`) & !is.na(`Relative Humidity`))
+
+
+planting_points_data_all_1=data.frame()
+
+#rain guage not there for SSC5 Boumourt, SSC6 _100, 
+
+
+for (i in 1:nrow(planting_files_df)){
+ 
+  #print(planting_files_df[i])
+  #load(files[i])
+ 
+  #print(dim(t))
+ c <- read_excel(planting_files_df$full_file_name[i],skip=2)
+   start_flex=c
+   
+   #glimpse(loc_dataset)
+   names(start_flex)[2] = "average_moisture"
+names(start_flex)[3] = "soil_mois_1_10"
+names(start_flex)[4] = "soil_mois_2_20"
+names(start_flex)[5] = "soil_mois_3_30"
+names(start_flex)[6] = "soil_mois_4_40"
+names(start_flex)[7] = "soil_mois_5_50"
+names(start_flex)[8] = "soil_mois_6_60"
+#names(start_flex)[9] = "rain_gauge"
+names(start_flex)[9] = "soil_temp_1_10"
+names(start_flex)[10] = "soil_temp_2_20"
+names(start_flex)[11] = "soil_temp_3_30"
+names(start_flex)[12] = "soil_temp_4_40"
+names(start_flex)[13] = "soil_temp_5_50"
+names(start_flex)[14] = "soil_temp_6_60"
+#start_flex$`Ambient Temperature`= NULL
+#start_flex$`Relative Humidity`= NULL
+start_flex$location_name = planting_files_df$location[i]
+start_flex$location = planting_files_df$location[i]
+start_flex$hybrid = planting_files_df$hybrid[i]
+start_flex$interrow_spacing = planting_files_df$row_spacing_cm[i]
+start_flex$filename = planting_files_df$file_name[i]
+start_flex$latitude = planting_files_df$latitude[i]
+start_flex$longitude = planting_files_df$longitude[i]
+start_flex$sowing_date = planting_files_df$planting_date[i]
+#start_flex$harvest_date = planting_files_df$harvest_date[i]
+start_flex$system = planting_files_df$system[i]
+start_flex$density = planting_files_df$density[i]
+start_flex$hybrid_type = planting_files_df$hybrid_type[i]
+start_flex = filter(start_flex, !is.na(soil_mois_1_10))
+
+     planting_points_data_all_1 = bind_rows(planting_points_data_all_1, start_flex)
+
+}
+
+hygrometer_all_1 = planting_points_data_all_1[,c(1,16:28)]
+
+hygrometer_all_1 = filter(hygrometer_all_1, !is.na(`Ambient Temperature`) )
+
+#hygrometer_all_1 = filter(hygrometer_all, !is.na(`Ambient Temperature`) & !is.na(`Relative Humidity`))
+
+
+write_csv(hygrometer_all_1,"/mnt/data/SSC_hygrometer_trials_consolidated_data_2025_season.csv")
+
+
+
+sondes_data = hygrometer_all_1
+
+sondes_data$rain_gauge= NULL
+
+sondes_data_long = sondes_data %>% gather(trait,value,13:14)
+
+unique(sondes_data_long$trait)
+unique(sondes_data_long$system)
+
+
+
+sondes_data_long$dat = as.Date(sondes_data_long$Date)
+
+sondes_data_long$round_dat = round_date(sondes_data_long$Date, "hour")
+
+sondes_data_gather_summary_1 = sondes_data_long %>% group_by(location,system,trait,round_dat) %>% arrange(round_dat) %>%summarise(mean_value=mean(value))
+sondes_data_gather_summary_1 = sondes_data_gather_summary_1 %>% unite(hybrid_factor_trait, location,system,trait, sep="__", remove=F)
+
+
+sondes_data_gather_summary_2 = sondes_data_gather_summary_1 %>% group_by(hybrid_factor_trait) %>% arrange(round_dat) %>%  mutate(rank_day=row_number()) %>% filter(rank_day==1)
+
+#sondes_data_2_gather_summary_2 = sondes_data_2_gather_summary_1 %>% group_by(trait) %>% mutate(max_or_min= ifelse(mean_value==max(mean_value), "max","not_max"),coefficient= mean_value/min(mean_value), final_coefficient= coefficient) %>% unite(hybrid_factor_trait, hybrid_factor,trait, sep="__", remove=F) 
+
+sondes_data_gather_summary_2 = sondes_data_gather_summary_2 %>% group_by(location,trait) %>% mutate(max_or_min= ifelse(mean_value==max(mean_value), "max","min"),coefficient= max(mean_value)/mean_value, final_coefficient= ifelse(max_or_min=="min",coefficient,1)) %>% unite(hybrid_factor_trait, location,system,trait, sep="__", remove=F)
+
+sondes_data_gather_summary_3 = sondes_data_gather_summary_2 %>% dplyr::select(hybrid_factor_trait,final_coefficient)
+
+sondes_data_gather_summary_1 = merge(sondes_data_gather_summary_1,sondes_data_gather_summary_3,by="hybrid_factor_trait")
+
+sondes_data_gather_summary_1 = sondes_data_gather_summary_1 %>% mutate(value_transformed= mean_value*final_coefficient)
+
+
+```
+
+
+# Ambient Temperature - Time series visualization
+
+```{r message=FALSE, warning=FALSE, echo=FALSE,fig.height=10, fig.width=20}
+
+#sondes_data_gather_summary_1 = sondes_data_gather_summary_1 %>% mutate(trait_type = ifelse(trait.x %in% c("Ambient Temperature")))
+
+
+
+sondes_data_2_gather_summary_1_plot = filter(sondes_data_gather_summary_1, trait.x=="Ambient Temperature")
+
+#sondes_data_2_gather_summary_1_plot = filter(sondes_data_2_gather_summary_1_plot, location.x == "SENESTIS")
+
+unique(sondes_data_2_gather_summary_1_plot$trait.x)
+
+sondes_data_2_gather_summary_1_plot = sondes_data_2_gather_summary_1_plot %>% unite(hybrid_trait,system, sep="__", remove=F)
+
+p <- ggplot(sondes_data_2_gather_summary_1_plot, aes(x=as.Date(round_dat), y=value_transformed, color=hybrid_trait,alpha=0.5)) +
+  geom_line() + 
+  xlab("")+ggtitle("Ambient Temperature - Using the Coefficient method")+facet_grid(trait.x~location.x,scales="free_y")
+plotly::ggplotly(p)
+
+
+p <- ggplot(sondes_data_2_gather_summary_1_plot, aes(x=as.Date(round_dat), y=value_transformed, color=hybrid_trait,alpha=0.5)) +
+  geom_smooth() + 
+  xlab("")+ggtitle("Ambient Temperature - Using the Coefficient method")+facet_grid(trait.x~location.x,scales="free_y")
+plotly::ggplotly(p)
+
+
+# sondes_data_2_gather_summary_1_plot = filter(sondes_data_gather_summary_1, trait_type!="capacity sensors")
+# 
+# #sondes_data_2_gather_summary_1_plot = filter(sondes_data_2_gather_summary_1_plot, location.x == "SENESTIS")
+# 
+# unique(sondes_data_2_gather_summary_1_plot$trait.x)
+# 
+# sondes_data_2_gather_summary_1_plot = sondes_data_2_gather_summary_1_plot %>% unite(hybrid_trait, hybrid_type,system, sep="__", remove=F)
+# 
+# p <- ggplot(sondes_data_2_gather_summary_1_plot, aes(x=as.Date(dat), y=value_transformed, color=hybrid_trait,alpha=0.5)) +
+#   geom_line() + 
+#   xlab("")+ggtitle("Soil temperature - Using the Coefficient method")+facet_grid(trait.x~trait_type,scales="free_y")
+# plotly::ggplotly(p)
+```
+
+
+# Relative Humidity - Time series visualization
+
+```{r message=FALSE, warning=FALSE, echo=FALSE,fig.height=10, fig.width=20}
+
+#sondes_data_gather_summary_1 = sondes_data_gather_summary_1 %>% mutate(trait_type = ifelse(trait.x %in% c("Ambient Temperature")))
+
+
+
+sondes_data_2_gather_summary_1_plot = filter(sondes_data_gather_summary_1, trait.x!="Ambient Temperature")
+
+#sondes_data_2_gather_summary_1_plot = filter(sondes_data_2_gather_summary_1_plot, location.x == "SENESTIS")
+
+unique(sondes_data_2_gather_summary_1_plot$trait.x)
+
+sondes_data_2_gather_summary_1_plot = sondes_data_2_gather_summary_1_plot %>% unite(hybrid_trait,system, sep="__", remove=F)
+
+p <- ggplot(sondes_data_2_gather_summary_1_plot, aes(x=as.Date(round_dat), y=value_transformed, color=hybrid_trait,alpha=0.5)) +
+  geom_line() + 
+  xlab("")+ggtitle("Relative Humidity")+facet_grid(trait.x~location.x,scales="free_y")
+plotly::ggplotly(p)
+
+
+p <- ggplot(sondes_data_2_gather_summary_1_plot, aes(x=as.Date(round_dat), y=value_transformed, color=hybrid_trait,alpha=0.5)) +
+  geom_smooth() + 
+  xlab("")+ggtitle("Relative Humidity")+facet_grid(trait.x~location.x,scales="free_y")
+plotly::ggplotly(p)
+
+# sondes_data_2_gather_summary_1_plot = filter(sondes_data_gather_summary_1, trait_type!="capacity sensors")
+# 
+# #sondes_data_2_gather_summary_1_plot = filter(sondes_data_2_gather_summary_1_plot, location.x == "SENESTIS")
+# 
+# unique(sondes_data_2_gather_summary_1_plot$trait.x)
+# 
+# sondes_data_2_gather_summary_1_plot = sondes_data_2_gather_summary_1_plot %>% unite(hybrid_trait, hybrid_type,system, sep="__", remove=F)
+# 
+# p <- ggplot(sondes_data_2_gather_summary_1_plot, aes(x=as.Date(dat), y=value_transformed, color=hybrid_trait,alpha=0.5)) +
+#   geom_line() + 
+#   xlab("")+ggtitle("Soil temperature - Using the Coefficient method")+facet_grid(trait.x~trait_type,scales="free_y")
+# plotly::ggplotly(p)
+```
+
+
+```{r message=FALSE, warning=FALSE, echo=FALSE,fig.height=15, fig.width=15}
+sondes_data_gather_summary_1$Date = sondes_data_gather_summary_1$round_dat
+sondes_data_gather_summary_1 <- sondes_data_gather_summary_1 %>%
+  mutate(
+   date = as.Date(Date),
+    year=year(Date),
+    month=month(Date),
+    day=day(Date),
+    hour = hour(Date),
+    minute = minute(Date),
+    second = second(Date)
+  ) %>%
+  mutate(
+    #format_date = format(date, "%m/%d/%Y"),
+    format_hour = paste(hour, minute, sep = ":")
+)
+
+sondes_data_gather_summary_1 = sondes_data_gather_summary_1 %>%
+  mutate(time = as.POSIXct(Date, format = "%H:%M"), 
+         hour = as.integer(format(time, '%H')), 
+         time_of_day  = case_when(between(hour, 1, 6) ~ "1: Night (01:00-06:00)", 
+                            between(hour, 12, 17) ~"2: Day (12:00-17:00)", 
+                            TRUE ~"3: Rest (6:00-11:59,17:01-00:59)"))
+
+
+
+```
+
+# SENESTIS
+
+*Hypothesis*: 
+
+The narrow-row system affects the temperature and relative humidity. We believe that with a 40 cm spacing, we have lower temperatures and higher humidity during the day and higher temperatures at night.
+
+
+- Time periods classified into 3 time periods based on time of day:     
+  1: Night (01:00-06:00),     
+  2: Day (12:00-17:00) and  
+  3: Rest (6:00-11:59,17:01-00:59)  
+
+```{r message=FALSE, warning=FALSE, echo=FALSE,fig.height=15, fig.width=15}
+sondes_data_2_gather_summary_1_plot = filter(sondes_data_gather_summary_1, location.x=="SENESTIS")
+
+
+#sondes_data_2_gather_summary_1_plot = filter(sondes_data_2_gather_summary_1_plot, trait=="Ambient Temperature")
+
+#sondes_data_2_gather_summary_1_plot = filter(sondes_data_2_gather_summary_1_plot, location.x == "SENESTIS")
+
+#unique(sondes_data_2_gather_summary_1_plot$trait)
+
+sondes_data_2_gather_summary_1_plot = sondes_data_2_gather_summary_1_plot %>% unite(hybrid_trait,system, sep="__", remove=F)
+
+sondes_data_2_gather_summary_1_plot = sondes_data_2_gather_summary_1_plot %>% unite(hybrid_trait,system, sep="__", remove=F)
+
+temp = filter(sondes_data_2_gather_summary_1_plot, trait.x=="Ambient Temperature")
+
+
+p <- ggplot(temp, aes(x=as.Date(time), y=mean_value, color=hybrid_trait,alpha=0.5)) +
+  geom_line() + 
+  xlab("")+ggtitle("Ambient Temperature")+facet_grid(time_of_day~location.x,scales="free_y")
+#
+plotly::ggplotly(p)
+
+temp = filter(sondes_data_2_gather_summary_1_plot, trait.x!="Ambient Temperature")
+
+
+p <- ggplot(temp, aes(x=as.Date(time), y=mean_value, color=hybrid_trait,alpha=0.5)) +
+  geom_line() + 
+  xlab("")+ggtitle("Relative Humidity")+facet_grid(time_of_day~location.x,scales="free_y")
+#
+plotly::ggplotly(p)
+
+temp = filter(sondes_data_2_gather_summary_1_plot, trait.x=="Ambient Temperature")
+
+p <- ggplot(temp, aes(x=as.Date(time), y=mean_value, color=hybrid_trait,alpha=0.5)) + 
+  xlab("")+ggtitle("Ambient Temperature")+facet_grid(time_of_day~trait.x,scales="free_y")+geom_smooth()
+plotly::ggplotly(p)
+
+
+temp = filter(sondes_data_2_gather_summary_1_plot, trait.x!="Ambient Temperature")
+
+p <- ggplot(temp, aes(x=as.Date(time), y=mean_value, color=hybrid_trait,alpha=0.5)) + 
+  xlab("")+ggtitle("Relative Humidity")+facet_grid(time_of_day~trait.x,scales="free_y")+geom_smooth()
+plotly::ggplotly(p)
+
+
+
+```
+
+
+
+
+
+*Analysis to verify the hypothesis*
+
+
+1 - Delta Temperature and humidity: difference in temperature and humidity of the SSC in relation to the Tall at two different times within a day (for the entire data period)
+[T (°C) SSC - T (°C) Tall]  and [H (%) SSC - H (%) Tall]
+01 a.m until 6 a.m and 12 p.m. until 17 p.m  
+
+
+
+ 
+
+```{r message=FALSE, warning=FALSE, echo=FALSE,fig.height=15, fig.width=15}
+sondes_data_gather_summary_1_sum = sondes_data_2_gather_summary_1_plot %>% group_by(location.x,trait.x,system,time_of_day) %>% summarise(average_value=mean(mean_value))
+
+DT::datatable(sondes_data_gather_summary_1_sum)
+```
+
+*Statistical analysis - Ambient temperature*
+
+The least significant difference (LSD) test is used in the context of the analysis of variance, when the F-ratio suggests rejection of the null hypothesis H 0, that is, when the difference between the population means is significant.
+
+
+This test helps to identify the populations whose means are statistically different. The basic idea of the test is to compare the populations taken in pairs. It is then used to proceed in a one-way or two-way analysis of variance, given that the null hypothesis has already been rejected.
+
+
+The LSD test was developed by Fisher, Ronald Aylmer (1935), who wanted to know which treatments had a significant effect in an analysis of variance.
+
+**1: Night (01:00-06:00)**
+
+```{r,  echo=F,message=FALSE, warning=FALSE}
+library(agricolae)
+#data(sweetpotato)
+
+sondes_data_2_gather_summary_1_plot = sondes_data_2_gather_summary_1_plot %>% mutate(hybrid = ifelse(system=="DKC5812 FARMER SYSTEM - 85 000 plt/ha - 80 cm", "DKC5812_85K_80cm","EZ5936XKPZ_120K_40cm"))
+
+hygro = filter(sondes_data_2_gather_summary_1_plot,trait.y=="Ambient Temperature")
+hygro = filter(hygro,time_of_day=="1: Night (01:00-06:00)")
+model<-aov(mean_value~hybrid, data=hygro)
+out <- LSD.test(model,"hybrid", p.adj="hochberg")
+#out
+print(LSD.test(model,"hybrid"))
+plot(out,variation="SD") 
+#plot(out)
+#model
+
+
+
+```
+
+**2: Day (12:00-17:00)**
+
+```{r , echo=F, message=FALSE, warning=FALSE}
+hygro = filter(sondes_data_2_gather_summary_1_plot,trait.y=="Ambient Temperature")
+hygro = filter(hygro,time_of_day== "2: Day (12:00-17:00)" )
+model<-aov(mean_value~hybrid, data=hygro)
+#
+out <- LSD.test(model,"hybrid", p.adj="hochberg")
+#out
+print(LSD.test(model,"hybrid"))
+plot(out,variation="SD") 
+
+
+
+```
+
+**3: Rest (6:00-11:59,17:01-00:59)**
+
+```{r , echo=F, message=FALSE, warning=FALSE}
+hygro = filter(sondes_data_2_gather_summary_1_plot,trait.y=="Ambient Temperature")
+hygro = filter(hygro,time_of_day==  "3: Rest (6:00-11:59,17:01-00:59)")
+model<-aov(mean_value~hybrid, data=hygro)
+#
+out <- LSD.test(model,"hybrid", p.adj="hochberg")
+#out
+print(LSD.test(model,"hybrid"))
+plot(out,variation="SD") 
+```
+
+
+*Statistical analysis - Relative Humidity*
+
+**1: Night (01:00-06:00)**
+
+```{r, echo=F, message=FALSE, warning=FALSE}
+library(agricolae)
+#data(sweetpotato)
+
+hygro = filter(sondes_data_2_gather_summary_1_plot,trait.y!="Ambient Temperature")
+hygro = filter(hygro,time_of_day=="1: Night (01:00-06:00)")
+model<-aov(mean_value~hybrid, data=hygro)
+out <- LSD.test(model,"hybrid", p.adj="hochberg")
+#out
+print(LSD.test(model,"hybrid"))
+plot(out,variation="SD") 
+#plot(out)
+#model
+
+
+
+```
+
+**2: Day (12:00-17:00)**
+
+```{r , echo=F, message=FALSE, warning=FALSE}
+hygro = filter(sondes_data_2_gather_summary_1_plot,trait.y!="Ambient Temperature")
+hygro = filter(hygro,time_of_day== "2: Day (12:00-17:00)" )
+model<-aov(mean_value~hybrid, data=hygro)
+out <- LSD.test(model,"hybrid", p.adj="hochberg")
+#out
+print(LSD.test(model,"hybrid"))
+plot(out,variation="SD") 
+
+
+ 
+```
+
+
+**3: Rest (6:00-11:59,17:01-00:59)**
+
+```{r , echo=F, message=FALSE, warning=FALSE}
+hygro = filter(sondes_data_2_gather_summary_1_plot,trait.y!="Ambient Temperature")
+hygro = filter(hygro,time_of_day==  "3: Rest (6:00-11:59,17:01-00:59)")
+model<-aov(mean_value~hybrid, data=hygro)
+out <- LSD.test(model,"hybrid", p.adj="hochberg")
+#out
+print(LSD.test(model,"hybrid"))
+plot(out,variation="SD")
+```
+
+
+*Accumulation of temperatures above 30 °C*
+
+
+2 - Accumulation of temperatures above 30 °C for the entire data period and the frequency of occurrence (temperature that affects plant metabolism)
+Example: Tall (SENESTIS)	
+
+Degrees accumulation above 30 °C = 1.2 + 1.6 + 2.1 = 4.9 °C during 1h.
+
+```{r message=FALSE, warning=FALSE, echo=FALSE,fig.height=10, fig.width=10}
+accumulation_data = filter(sondes_data_long, location=="SENESTIS")
+accumulation_data$round_dat = NULL
+accumulation_data = filter(accumulation_data, trait=="Ambient Temperature")
+
+accumulation_data_1 = mutate(accumulation_data, degrees_above_30=value-30)
+accumulation_data_1 = mutate(accumulation_data_1, degrees_above_30_no_negative = ifelse(degrees_above_30<0,0,degrees_above_30))
+accumulation_data_1_summary = accumulation_data_1 %>% group_by(location_name ,location,system,trait,hybrid_type) %>% summarise(sum_degrees_above_30=sum(degrees_above_30_no_negative))
+
+DT::datatable(accumulation_data_1_summary)
+
+#accumulation_data_1 = accumulation_data_1 %>% group_by(location_name ,location,system,trait,hybrid_type) %>% mutate(sum_degrees_above_30=sum(degrees_above_30_no_negative))
+
+cumulative_data_final = accumulation_data_1 %>% group_by(location_name ,hybrid_type,trait,system) %>% arrange(Date) %>% mutate(cumulative_delta = cumsum(degrees_above_30_no_negative ))
+
+p <- ggplot(cumulative_data_final, aes(x=as.Date(Date), y=cumulative_delta, color=system,alpha=0.5)) +
+  geom_line()+geom_point()+
+  xlab("")+ggtitle("Dynamics of cumulative delta across the season")+facet_grid(trait~location_name)
+plotly::ggplotly(p)
+
+
+p <- ggplot(cumulative_data_final, aes(x=as.Date(Date), y=cumulative_delta, color=system,alpha=0.5)) +
+  geom_line()+
+  xlab("")+ggtitle("Dynamics of cumulative delta across the season")+facet_grid(trait~location_name)
+plotly::ggplotly(p)
+```
+
+# COUSSAN
+
+*Hypothesis*: 
+
+The narrow-row system affects the temperature and relative humidity. We believe that with a 40 cm spacing, we have lower temperatures and higher humidity during the day and higher temperatures at night.
+
+
+- Time periods classified into 3 time periods based on time of day:     
+  1: Night (01:00-06:00),     
+  2: Day (12:00-17:00) and  
+  3: Rest (6:00-11:59,17:01-00:59)  
+
+```{r message=FALSE, warning=FALSE, echo=FALSE,fig.height=15, fig.width=15}
+sondes_data_2_gather_summary_1_plot = filter(sondes_data_gather_summary_1, location.x=="COUSSAN")
+
+
+#sondes_data_2_gather_summary_1_plot = filter(sondes_data_2_gather_summary_1_plot, trait=="Ambient Temperature")
+
+#sondes_data_2_gather_summary_1_plot = filter(sondes_data_2_gather_summary_1_plot, location.x == "SENESTIS")
+
+#unique(sondes_data_2_gather_summary_1_plot$trait)
+
+sondes_data_2_gather_summary_1_plot = sondes_data_2_gather_summary_1_plot %>% unite(hybrid_trait,system, sep="__", remove=F)
+
+temp = filter(sondes_data_2_gather_summary_1_plot, trait.x=="Ambient Temperature")
+
+
+p <- ggplot(temp, aes(x=as.Date(time), y=mean_value, color=hybrid_trait,alpha=0.5)) +
+  geom_line() + 
+  xlab("")+ggtitle("Ambient Temperature")+facet_grid(time_of_day~location.x,scales="free_y")
+#
+plotly::ggplotly(p)
+
+temp = filter(sondes_data_2_gather_summary_1_plot, trait.x!="Ambient Temperature")
+
+
+p <- ggplot(temp, aes(x=as.Date(time), y=mean_value, color=hybrid_trait,alpha=0.5)) +
+  geom_line() + 
+  xlab("")+ggtitle("Relative Humidity")+facet_grid(time_of_day~location.x,scales="free_y")
+#
+plotly::ggplotly(p)
+
+temp = filter(sondes_data_2_gather_summary_1_plot, trait.x=="Ambient Temperature")
+
+p <- ggplot(temp, aes(x=as.Date(time), y=mean_value, color=hybrid_trait,alpha=0.5)) + 
+  xlab("")+ggtitle("Ambient Temperature")+facet_grid(time_of_day~trait.x,scales="free_y")+geom_smooth()
+plotly::ggplotly(p)
+
+
+temp = filter(sondes_data_2_gather_summary_1_plot, trait.x!="Ambient Temperature")
+
+p <- ggplot(temp, aes(x=as.Date(time), y=mean_value, color=hybrid_trait,alpha=0.5)) + 
+  xlab("")+ggtitle("Relative Humidity")+facet_grid(time_of_day~trait.x,scales="free_y")+geom_smooth()
+plotly::ggplotly(p)
+
+
+
+```
+
+
+
+
+
+*Analysis to verify the hypothesis*
+
+
+1 - Delta Temperature and humidity: difference in temperature and humidity of the SSC in relation to the Tall at two different times within a day (for the entire data period)
+[T (°C) SSC - T (°C) Tall]  and [H (%) SSC - H (%) Tall]
+01 a.m until 6 a.m and 12 p.m. until 17 p.m  
+
+
+
+ 
+
+```{r message=FALSE, warning=FALSE, echo=FALSE,fig.height=15, fig.width=15}
+sondes_data_gather_summary_1_sum = sondes_data_2_gather_summary_1_plot %>% group_by(location.x,trait.x,system,time_of_day) %>% summarise(average_value=mean(mean_value))
+
+DT::datatable(sondes_data_gather_summary_1_sum)
+```
+
+*Statistical analysis - Ambient temperature*
+
+**1: Night (01:00-06:00)**
+
+```{r,  echo=F,message=FALSE, warning=FALSE}
+library(agricolae)
+#data(sweetpotato)
+
+sondes_data_2_gather_summary_1_plot = sondes_data_2_gather_summary_1_plot %>% mutate(hybrid = ifelse(system=="DKC5812 FARMER SYSTEM - 85 000 plt/ha - 80 cm", "DKC5812_85K_80cm","EZ5936XKPZ_120K_40cm"))
+
+hygro = filter(sondes_data_2_gather_summary_1_plot,trait.y=="Ambient Temperature")
+hygro = filter(hygro,time_of_day=="1: Night (01:00-06:00)")
+model<-aov(mean_value~hybrid, data=hygro)
+out <- LSD.test(model,"hybrid", p.adj="hochberg")
+#out
+print(LSD.test(model,"hybrid"))
+plot(out,variation="SD") 
+#plot(out)
+#model
+
+
+
+```
+
+**2: Day (12:00-17:00)**
+
+```{r , echo=F, message=FALSE, warning=FALSE}
+hygro = filter(sondes_data_2_gather_summary_1_plot,trait.y=="Ambient Temperature")
+hygro = filter(hygro,time_of_day== "2: Day (12:00-17:00)" )
+model<-aov(mean_value~hybrid, data=hygro)
+#
+out <- LSD.test(model,"hybrid", p.adj="hochberg")
+#out
+print(LSD.test(model,"hybrid"))
+plot(out,variation="SD") 
+
+
+
+```
+
+**3: Rest (6:00-11:59,17:01-00:59)**
+
+```{r , echo=F, message=FALSE, warning=FALSE}
+hygro = filter(sondes_data_2_gather_summary_1_plot,trait.y=="Ambient Temperature")
+hygro = filter(hygro,time_of_day==  "3: Rest (6:00-11:59,17:01-00:59)")
+model<-aov(mean_value~hybrid, data=hygro)
+#
+out <- LSD.test(model,"hybrid", p.adj="hochberg")
+#out
+print(LSD.test(model,"hybrid"))
+plot(out,variation="SD") 
+```
+
+
+*Statistical analysis - Relative Humidity*
+
+**1: Night (01:00-06:00)**
+
+```{r, echo=F, message=FALSE, warning=FALSE}
+library(agricolae)
+#data(sweetpotato)
+
+hygro = filter(sondes_data_2_gather_summary_1_plot,trait.y!="Ambient Temperature")
+hygro = filter(hygro,time_of_day=="1: Night (01:00-06:00)")
+model<-aov(mean_value~hybrid, data=hygro)
+out <- LSD.test(model,"hybrid", p.adj="hochberg")
+#out
+print(LSD.test(model,"hybrid"))
+plot(out,variation="SD") 
+#plot(out)
+#model
+
+
+
+```
+
+**2: Day (12:00-17:00)**
+
+```{r , echo=F, message=FALSE, warning=FALSE}
+hygro = filter(sondes_data_2_gather_summary_1_plot,trait.y!="Ambient Temperature")
+hygro = filter(hygro,time_of_day== "2: Day (12:00-17:00)" )
+model<-aov(mean_value~hybrid, data=hygro)
+out <- LSD.test(model,"hybrid", p.adj="hochberg")
+#out
+print(LSD.test(model,"hybrid"))
+plot(out,variation="SD") 
+
+
+ 
+```
+
+
+**3: Rest (6:00-11:59,17:01-00:59)**
+
+```{r , echo=F, message=FALSE, warning=FALSE}
+hygro = filter(sondes_data_2_gather_summary_1_plot,trait.y!="Ambient Temperature")
+hygro = filter(hygro,time_of_day==  "3: Rest (6:00-11:59,17:01-00:59)")
+model<-aov(mean_value~hybrid, data=hygro)
+out <- LSD.test(model,"hybrid", p.adj="hochberg")
+#out
+print(LSD.test(model,"hybrid"))
+plot(out,variation="SD")
+```
+
+
+*Accumulation of temperatures above 30 °C*
+
+
+2 - Accumulation of temperatures above 30 °C for the entire data period and the frequency of occurrence (temperature that affects plant metabolism)
+Example: Tall (SENESTIS)	
+
+Degrees accumulation above 30 °C = 1.2 + 1.6 + 2.1 = 4.9 °C during 1h.
+
+```{r message=FALSE, warning=FALSE, echo=FALSE,fig.height=10, fig.width=10}
+accumulation_data = filter(sondes_data_long, location=="COUSSAN")
+accumulation_data$round_dat = NULL
+accumulation_data = filter(accumulation_data, trait=="Ambient Temperature")
+
+accumulation_data_1 = mutate(accumulation_data, degrees_above_30=value-30)
+accumulation_data_1 = mutate(accumulation_data_1, degrees_above_30_no_negative = ifelse(degrees_above_30<0,0,degrees_above_30))
+accumulation_data_1_summary = accumulation_data_1 %>% group_by(location_name ,location,system,trait,hybrid_type) %>% summarise(sum_degrees_above_30=sum(degrees_above_30_no_negative))
+
+DT::datatable(accumulation_data_1_summary)
+
+#accumulation_data_1 = accumulation_data_1 %>% group_by(location_name ,location,system,trait,hybrid_type) %>% mutate(sum_degrees_above_30=sum(degrees_above_30_no_negative))
+
+cumulative_data_final = accumulation_data_1 %>% group_by(location_name ,hybrid_type,trait,system) %>% arrange(Date) %>% mutate(cumulative_delta = cumsum(degrees_above_30_no_negative ))
+
+p <- ggplot(cumulative_data_final, aes(x=as.Date(Date), y=cumulative_delta, color=system,alpha=0.5)) +
+  geom_line()+geom_point()+
+  xlab("")+ggtitle("Dynamics of cumulative delta across the season")+facet_grid(trait~location_name)
+plotly::ggplotly(p)
+
+
+p <- ggplot(cumulative_data_final, aes(x=as.Date(Date), y=cumulative_delta, color=system,alpha=0.5)) +
+  geom_line()+
+  xlab("")+ggtitle("Dynamics of cumulative delta across the season")+facet_grid(trait~location_name)
+plotly::ggplotly(p)
+```
+
+
+# BOUMOURT
+
+*Hypothesis*: 
+
+The narrow-row system affects the temperature and relative humidity. We believe that with a 40 cm spacing, we have lower temperatures and higher humidity during the day and higher temperatures at night.
+
+
+- Time periods classified into 3 time periods based on time of day:     
+  1: Night (01:00-06:00),     
+  2: Day (12:00-17:00) and  
+  3: Rest (6:00-11:59,17:01-00:59)  
+
+```{r message=FALSE, warning=FALSE, echo=FALSE,fig.height=15, fig.width=15}
+sondes_data_2_gather_summary_1_plot = filter(sondes_data_gather_summary_1, location.x=="BOUMOURT")
+
+
+#sondes_data_2_gather_summary_1_plot = filter(sondes_data_2_gather_summary_1_plot, trait=="Ambient Temperature")
+
+#sondes_data_2_gather_summary_1_plot = filter(sondes_data_2_gather_summary_1_plot, location.x == "SENESTIS")
+
+#unique(sondes_data_2_gather_summary_1_plot$trait)
+
+sondes_data_2_gather_summary_1_plot = sondes_data_2_gather_summary_1_plot %>% unite(hybrid_trait,system, sep="__", remove=F)
+
+temp = filter(sondes_data_2_gather_summary_1_plot, trait.x=="Ambient Temperature")
+
+
+p <- ggplot(temp, aes(x=as.Date(time), y=mean_value, color=hybrid_trait,alpha=0.5)) +
+  geom_line() + 
+  xlab("")+ggtitle("Ambient Temperature")+facet_grid(time_of_day~location.x,scales="free_y")
+#
+plotly::ggplotly(p)
+
+temp = filter(sondes_data_2_gather_summary_1_plot, trait.x!="Ambient Temperature")
+
+
+p <- ggplot(temp, aes(x=as.Date(time), y=mean_value, color=hybrid_trait,alpha=0.5)) +
+  geom_line() + 
+  xlab("")+ggtitle("Relative Humidity")+facet_grid(time_of_day~location.x,scales="free_y")
+#
+plotly::ggplotly(p)
+
+temp = filter(sondes_data_2_gather_summary_1_plot, trait.x=="Ambient Temperature")
+
+p <- ggplot(temp, aes(x=as.Date(time), y=mean_value, color=hybrid_trait,alpha=0.5)) + 
+  xlab("")+ggtitle("Ambient Temperature")+facet_grid(time_of_day~trait.x,scales="free_y")+geom_smooth()
+plotly::ggplotly(p)
+
+
+temp = filter(sondes_data_2_gather_summary_1_plot, trait.x!="Ambient Temperature")
+
+p <- ggplot(temp, aes(x=as.Date(time), y=mean_value, color=hybrid_trait,alpha=0.5)) + 
+  xlab("")+ggtitle("Relative Humidity")+facet_grid(time_of_day~trait.x,scales="free_y")+geom_smooth()
+plotly::ggplotly(p)
+
+
+```
+
+
+
+
+
+*Analysis to verify the hypothesis*
+
+
+1 - Delta Temperature and humidity: difference in temperature and humidity of the SSC in relation to the Tall at two different times within a day (for the entire data period)
+[T (°C) SSC - T (°C) Tall]  and [H (%) SSC - H (%) Tall]
+01 a.m until 6 a.m and 12 p.m. until 17 p.m  
+
+
+
+ 
+
+```{r message=FALSE, warning=FALSE, echo=FALSE,fig.height=15, fig.width=15}
+sondes_data_gather_summary_1_sum = sondes_data_2_gather_summary_1_plot %>% group_by(location.x,trait.x,system,time_of_day) %>% summarise(average_value=mean(mean_value))
+
+DT::datatable(sondes_data_gather_summary_1_sum)
+```
+
+*Statistical analysis - Ambient temperature*
+
+**1: Night (01:00-06:00)**
+
+```{r,  echo=F,message=FALSE, warning=FALSE}
+library(agricolae)
+#data(sweetpotato)
+
+sondes_data_2_gather_summary_1_plot = sondes_data_2_gather_summary_1_plot %>% mutate(hybrid = ifelse(system=="DKC5812 FARMER SYSTEM - 85 000 plt/ha - 80 cm", "DKC5812_85K_80cm","EZ5936XKPZ_120K_40cm"))
+
+hygro = filter(sondes_data_2_gather_summary_1_plot,trait.y=="Ambient Temperature")
+hygro = filter(hygro,time_of_day=="1: Night (01:00-06:00)")
+model<-aov(mean_value~hybrid, data=hygro)
+out <- LSD.test(model,"hybrid", p.adj="hochberg")
+#out
+print(LSD.test(model,"hybrid"))
+plot(out,variation="SD") 
+#plot(out)
+#model
+
+
+
+```
+
+**2: Day (12:00-17:00)**
+
+```{r , echo=F, message=FALSE, warning=FALSE}
+hygro = filter(sondes_data_2_gather_summary_1_plot,trait.y=="Ambient Temperature")
+hygro = filter(hygro,time_of_day== "2: Day (12:00-17:00)" )
+model<-aov(mean_value~hybrid, data=hygro)
+#
+out <- LSD.test(model,"hybrid", p.adj="hochberg")
+#out
+print(LSD.test(model,"hybrid"))
+plot(out,variation="SD") 
+
+
+
+```
+
+**3: Rest (6:00-11:59,17:01-00:59)**
+
+```{r , echo=F, message=FALSE, warning=FALSE}
+hygro = filter(sondes_data_2_gather_summary_1_plot,trait.y=="Ambient Temperature")
+hygro = filter(hygro,time_of_day==  "3: Rest (6:00-11:59,17:01-00:59)")
+model<-aov(mean_value~hybrid, data=hygro)
+#
+out <- LSD.test(model,"hybrid", p.adj="hochberg")
+#out
+print(LSD.test(model,"hybrid"))
+plot(out,variation="SD") 
+```
+
+
+*Statistical analysis - Relative Humidity*
+
+**1: Night (01:00-06:00)**
+
+```{r, echo=F, message=FALSE, warning=FALSE}
+library(agricolae)
+#data(sweetpotato)
+
+hygro = filter(sondes_data_2_gather_summary_1_plot,trait.y!="Ambient Temperature")
+hygro = filter(hygro,time_of_day=="1: Night (01:00-06:00)")
+model<-aov(mean_value~hybrid, data=hygro)
+out <- LSD.test(model,"hybrid", p.adj="hochberg")
+#out
+print(LSD.test(model,"hybrid"))
+plot(out,variation="SD") 
+#plot(out)
+#model
+
+
+
+```
+
+**2: Day (12:00-17:00)**
+
+```{r , echo=F, message=FALSE, warning=FALSE}
+hygro = filter(sondes_data_2_gather_summary_1_plot,trait.y!="Ambient Temperature")
+hygro = filter(hygro,time_of_day== "2: Day (12:00-17:00)" )
+model<-aov(mean_value~hybrid, data=hygro)
+out <- LSD.test(model,"hybrid", p.adj="hochberg")
+#out
+print(LSD.test(model,"hybrid"))
+plot(out,variation="SD") 
+
+
+ 
+```
+
+
+**3: Rest (6:00-11:59,17:01-00:59)**
+
+```{r , echo=F, message=FALSE, warning=FALSE}
+hygro = filter(sondes_data_2_gather_summary_1_plot,trait.y!="Ambient Temperature")
+hygro = filter(hygro,time_of_day==  "3: Rest (6:00-11:59,17:01-00:59)")
+model<-aov(mean_value~hybrid, data=hygro)
+out <- LSD.test(model,"hybrid", p.adj="hochberg")
+#out
+print(LSD.test(model,"hybrid"))
+plot(out,variation="SD")
+```
+
+
+*Accumulation of temperatures above 30 °C*
+
+
+2 - Accumulation of temperatures above 30 °C for the entire data period and the frequency of occurrence (temperature that affects plant metabolism)
+Example: Tall (SENESTIS)	
+
+Degrees accumulation above 30 °C = 1.2 + 1.6 + 2.1 = 4.9 °C during 1h.
+
+```{r message=FALSE, warning=FALSE, echo=FALSE,fig.height=10, fig.width=10}
+accumulation_data = filter(sondes_data_long, location=="BOUMOURT")
+accumulation_data$round_dat = NULL
+accumulation_data = filter(accumulation_data, trait=="Ambient Temperature")
+
+accumulation_data_1 = mutate(accumulation_data, degrees_above_30=value-30)
+accumulation_data_1 = mutate(accumulation_data_1, degrees_above_30_no_negative = ifelse(degrees_above_30<0,0,degrees_above_30))
+accumulation_data_1_summary = accumulation_data_1 %>% group_by(location_name ,location,system,trait,hybrid_type) %>% summarise(sum_degrees_above_30=sum(degrees_above_30_no_negative))
+
+DT::datatable(accumulation_data_1_summary)
+
+#accumulation_data_1 = accumulation_data_1 %>% group_by(location_name ,location,system,trait,hybrid_type) %>% mutate(sum_degrees_above_30=sum(degrees_above_30_no_negative))
+
+cumulative_data_final = accumulation_data_1 %>% group_by(location_name ,hybrid_type,trait,system) %>% arrange(Date) %>% mutate(cumulative_delta = cumsum(degrees_above_30_no_negative ))
+
+p <- ggplot(cumulative_data_final, aes(x=as.Date(Date), y=cumulative_delta, color=system,alpha=0.5)) +
+  geom_line()+geom_point()+
+  xlab("")+ggtitle("Dynamics of cumulative delta across the season")+facet_grid(trait~location_name)
+plotly::ggplotly(p)
+
+
+p <- ggplot(cumulative_data_final, aes(x=as.Date(Date), y=cumulative_delta, color=system,alpha=0.5)) +
+  geom_line()+
+  xlab("")+ggtitle("Dynamics of cumulative delta across the season")+facet_grid(trait~location_name)
+plotly::ggplotly(p)
+```
+
+
+# POURSIUGUES (SSC6 100%)
+
+*Hypothesis*: 
+
+The narrow-row system affects the temperature and relative humidity. We believe that with a 40 cm spacing, we have lower temperatures and higher humidity during the day and higher temperatures at night.
+
+
+- Time periods classified into 3 time periods based on time of day:     
+  1: Night (01:00-06:00),     
+  2: Day (12:00-17:00) and  
+  3: Rest (6:00-11:59,17:01-00:59)  
+
+```{r message=FALSE, warning=FALSE, echo=FALSE,fig.height=15, fig.width=15}
+sondes_data_2_gather_summary_1_plot = filter(sondes_data_gather_summary_1, location.x=="POURSIUGUES (SSC6 100%)")
+
+
+#sondes_data_2_gather_summary_1_plot = filter(sondes_data_2_gather_summary_1_plot, trait=="Ambient Temperature")
+
+#sondes_data_2_gather_summary_1_plot = filter(sondes_data_2_gather_summary_1_plot, location.x == "SENESTIS")
+
+#unique(sondes_data_2_gather_summary_1_plot$trait)
+
+sondes_data_2_gather_summary_1_plot = sondes_data_2_gather_summary_1_plot %>% unite(hybrid_trait,system, sep="__", remove=F)
+
+temp = filter(sondes_data_2_gather_summary_1_plot, trait.x=="Ambient Temperature")
+
+
+p <- ggplot(temp, aes(x=as.Date(time), y=mean_value, color=hybrid_trait,alpha=0.5)) +
+  geom_line() + 
+  xlab("")+ggtitle("Ambient Temperature")+facet_grid(time_of_day~location.x,scales="free_y")
+#
+plotly::ggplotly(p)
+
+temp = filter(sondes_data_2_gather_summary_1_plot, trait.x!="Ambient Temperature")
+
+
+p <- ggplot(temp, aes(x=as.Date(time), y=mean_value, color=hybrid_trait,alpha=0.5)) +
+  geom_line() + 
+  xlab("")+ggtitle("Relative Humidity")+facet_grid(time_of_day~location.x,scales="free_y")
+#
+plotly::ggplotly(p)
+
+temp = filter(sondes_data_2_gather_summary_1_plot, trait.x=="Ambient Temperature")
+
+p <- ggplot(temp, aes(x=as.Date(time), y=mean_value, color=hybrid_trait,alpha=0.5)) + 
+  xlab("")+ggtitle("Ambient Temperature")+facet_grid(time_of_day~trait.x,scales="free_y")+geom_smooth()
+plotly::ggplotly(p)
+
+
+temp = filter(sondes_data_2_gather_summary_1_plot, trait.x!="Ambient Temperature")
+
+p <- ggplot(temp, aes(x=as.Date(time), y=mean_value, color=hybrid_trait,alpha=0.5)) + 
+  xlab("")+ggtitle("Relative Humidity")+facet_grid(time_of_day~trait.x,scales="free_y")+geom_smooth()
+plotly::ggplotly(p)
+
+
+
+```
+
+
+
+
+
+*Analysis to verify the hypothesis*
+
+
+1 - Delta Temperature and humidity: difference in temperature and humidity of the SSC in relation to the Tall at two different times within a day (for the entire data period)
+[T (°C) SSC - T (°C) Tall]  and [H (%) SSC - H (%) Tall]
+01 a.m until 6 a.m and 12 p.m. until 17 p.m  
+
+
+
+ 
+
+```{r message=FALSE, warning=FALSE, echo=FALSE,fig.height=15, fig.width=15}
+sondes_data_gather_summary_1_sum = sondes_data_2_gather_summary_1_plot %>% group_by(location.x,trait.x,system,time_of_day) %>% summarise(average_value=mean(mean_value))
+
+DT::datatable(sondes_data_gather_summary_1_sum)
+```
+
+*Statistical analysis - Ambient temperature*
+
+**1: Night (01:00-06:00)**
+
+```{r,  echo=F,message=FALSE, warning=FALSE}
+library(agricolae)
+#data(sweetpotato)
+
+sondes_data_2_gather_summary_1_plot = sondes_data_2_gather_summary_1_plot %>% mutate(hybrid = ifelse(system=="DKC5812 FARMER SYSTEM - 85 000 plt/ha - 80 cm", "DKC5812_85K_80cm","EZ5936XKPZ_120K_40cm"))
+
+hygro = filter(sondes_data_2_gather_summary_1_plot,trait.y=="Ambient Temperature")
+hygro = filter(hygro,time_of_day=="1: Night (01:00-06:00)")
+model<-aov(mean_value~hybrid, data=hygro)
+out <- LSD.test(model,"hybrid", p.adj="hochberg")
+#out
+print(LSD.test(model,"hybrid"))
+plot(out,variation="SD") 
+#plot(out)
+#model
+
+
+
+```
+
+**2: Day (12:00-17:00)**
+
+```{r , echo=F, message=FALSE, warning=FALSE}
+hygro = filter(sondes_data_2_gather_summary_1_plot,trait.y=="Ambient Temperature")
+hygro = filter(hygro,time_of_day== "2: Day (12:00-17:00)" )
+model<-aov(mean_value~hybrid, data=hygro)
+#
+out <- LSD.test(model,"hybrid", p.adj="hochberg")
+#out
+print(LSD.test(model,"hybrid"))
+plot(out,variation="SD") 
+
+
+
+```
+
+**3: Rest (6:00-11:59,17:01-00:59)**
+
+```{r , echo=F, message=FALSE, warning=FALSE}
+hygro = filter(sondes_data_2_gather_summary_1_plot,trait.y=="Ambient Temperature")
+hygro = filter(hygro,time_of_day==  "3: Rest (6:00-11:59,17:01-00:59)")
+model<-aov(mean_value~hybrid, data=hygro)
+#
+out <- LSD.test(model,"hybrid", p.adj="hochberg")
+#out
+print(LSD.test(model,"hybrid"))
+plot(out,variation="SD") 
+```
+
+
+*Statistical analysis - Relative Humidity*
+
+**1: Night (01:00-06:00)**
+
+```{r, echo=F, message=FALSE, warning=FALSE}
+library(agricolae)
+#data(sweetpotato)
+
+hygro = filter(sondes_data_2_gather_summary_1_plot,trait.y!="Ambient Temperature")
+hygro = filter(hygro,time_of_day=="1: Night (01:00-06:00)")
+model<-aov(mean_value~hybrid, data=hygro)
+out <- LSD.test(model,"hybrid", p.adj="hochberg")
+#out
+print(LSD.test(model,"hybrid"))
+plot(out,variation="SD") 
+#plot(out)
+#model
+
+
+
+```
+
+**2: Day (12:00-17:00)**
+
+```{r , echo=F, message=FALSE, warning=FALSE}
+hygro = filter(sondes_data_2_gather_summary_1_plot,trait.y!="Ambient Temperature")
+hygro = filter(hygro,time_of_day== "2: Day (12:00-17:00)" )
+model<-aov(mean_value~hybrid, data=hygro)
+out <- LSD.test(model,"hybrid", p.adj="hochberg")
+#out
+print(LSD.test(model,"hybrid"))
+plot(out,variation="SD") 
+
+
+ 
+```
+
+
+**3: Rest (6:00-11:59,17:01-00:59)**
+
+```{r , echo=F, message=FALSE, warning=FALSE}
+hygro = filter(sondes_data_2_gather_summary_1_plot,trait.y!="Ambient Temperature")
+hygro = filter(hygro,time_of_day==  "3: Rest (6:00-11:59,17:01-00:59)")
+model<-aov(mean_value~hybrid, data=hygro)
+out <- LSD.test(model,"hybrid", p.adj="hochberg")
+#out
+print(LSD.test(model,"hybrid"))
+plot(out,variation="SD")
+```
+
+
+*Accumulation of temperatures above 30 °C*
+
+
+2 - Accumulation of temperatures above 30 °C for the entire data period and the frequency of occurrence (temperature that affects plant metabolism)
+Example: Tall (SENESTIS)	
+
+Degrees accumulation above 30 °C = 1.2 + 1.6 + 2.1 = 4.9 °C during 1h.
+
+```{r message=FALSE, warning=FALSE, echo=FALSE,fig.height=10, fig.width=10}
+accumulation_data = filter(sondes_data_long, location=="POURSIUGUES (SSC6 100%)")
+accumulation_data$round_dat = NULL
+accumulation_data = filter(accumulation_data, trait=="Ambient Temperature")
+
+accumulation_data_1 = mutate(accumulation_data, degrees_above_30=value-30)
+accumulation_data_1 = mutate(accumulation_data_1, degrees_above_30_no_negative = ifelse(degrees_above_30<0,0,degrees_above_30))
+accumulation_data_1_summary = accumulation_data_1 %>% group_by(location_name ,location,system,trait,hybrid_type) %>% summarise(sum_degrees_above_30=sum(degrees_above_30_no_negative))
+
+DT::datatable(accumulation_data_1_summary)
+
+#accumulation_data_1 = accumulation_data_1 %>% group_by(location_name ,location,system,trait,hybrid_type) %>% mutate(sum_degrees_above_30=sum(degrees_above_30_no_negative))
+
+cumulative_data_final = accumulation_data_1 %>% group_by(location_name ,hybrid_type,trait,system) %>% arrange(Date) %>% mutate(cumulative_delta = cumsum(degrees_above_30_no_negative ))
+
+p <- ggplot(cumulative_data_final, aes(x=as.Date(Date), y=cumulative_delta, color=system,alpha=0.5)) +
+  geom_line()+geom_point()+
+  xlab("")+ggtitle("Dynamics of cumulative delta across the season")+facet_grid(trait~location_name)
+plotly::ggplotly(p)
+
+
+p <- ggplot(cumulative_data_final, aes(x=as.Date(Date), y=cumulative_delta, color=system,alpha=0.5)) +
+  geom_line()+
+  xlab("")+ggtitle("Dynamics of cumulative delta across the season")+facet_grid(trait~location_name)
+plotly::ggplotly(p)
+```
+
