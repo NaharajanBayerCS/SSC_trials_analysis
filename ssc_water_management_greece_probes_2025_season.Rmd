@@ -1,0 +1,247 @@
+---
+title: "SSC Water Management Sustainability Trials in Greece 2025 "
+author: "Naharajan Lakshmanaperumal, Senior Data Scientist, EMEA L2 Agronomy"
+date: "13.02.2026"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+  beamer_presentation: default
+  pdf_document: default
+  slidy_presentation: default
+  ioslides_presentation: default
+  word_document:
+    reference_docx: south_africa_variety_data_report_final.docx
+always_allow_html: yes
+---
+
+# Contents
+
+<div class="logos"><img src="/mnt/images/emea_md_logo_3.PNG" width="50px" align="right"></div>
+ 
+<div class="logos"><img src="/mnt/images/RZ_EMEA_Sign_Claim_Screen_RGB_on_white (1) (1).png" width="100px" align="right"></div>
+
+
+- Protocol Summary
+
+- Raw data from Soil Moisture Protocol
+
+- Exploratory data analysis 
+
+    - Visualization of raw time series data
+    
+    - Data normalization using a coefficient method
+    
+    - Visualization of time series data
+
+
+<div class="logos"><img src="/mnt/images/restricted.PNG" width="100px" align="right"></div>
+
+
+# Water trials management SSC in Greece - Comparison between SSC and TALL systems
+
+
+<div class="logos"><img src="/mnt/images/emea_md_logo_3.PNG" width="50px" align="right"></div>
+ 
+<div class="logos"><img src="/mnt/images/RZ_EMEA_Sign_Claim_Screen_RGB_on_white (1) (1).png" width="100px" align="right"></div>
+
+
+- **Objective**: To compare the soil moisture & temperature levels at different soil depths between the two hybrid systems of interest - SSC 40cm VS Tall 80cm row spacing.
+
+
+[1] "DKC7236SC-40cm NS" "DKC7236SC-40cm S"  "ET6641XYZ-40cm NS"  
+ [4] "ET6641XYZ-40cm S"  "DKC6808 NS"        "DKC6808 S"          
+ [7] "DKC6980 NS"        "DKC6980 S"         "DKC6503 NS"         
+[10] "DKC6503 S"         "DKC6836SC NS"      "DKC6836SC S"          
+[13] "DKC7236SC NS"      "DKC7236SC S"       "ET6641XYZ NS"       
+[16] "ET6641XYZ S"       "DKC6836SC-40cm NS" "DKC6836SC-40cm S"   
+
+# Raw data from SSC Water Managemnt trial in Greece - Data Summary
+
+- Raw data sent by Amandine
+
+
+A = capacity sensors at diverse depths (5cm, 15, 25,35,45,55,65,75,85)  
+T = temperature   
+Depending date time and hybrids  
+75% mean reduction of 25% of irrigation system   
+100% is the check well irrigated    
+
+
+
+```{r message=FALSE, warning=FALSE, echo=FALSE}
+library(readr)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+#library(lmerTest)
+#library(multcompView)
+library(readxl)
+library(plotly)
+library(lubridate)
+#library(dygraphs)
+
+#install.packages("lmerTest")
+#install.packages("multcompView")
+
+#DT::datatable(head(start_flex,100), filter="top")
+
+probes_data = read_excel("/mnt/data/sensors_data_2025_NAHA.xlsx")
+
+probes_data = read_excel("/mnt/data/sensors_data_2025_NAHA.xlsx")
+
+DT::datatable(head(probes_data,200), filter="top")
+
+probes_data$`T9(85)`= NULL
+
+#probes_data = filter(probes_data, `T9(85)`<35)
+probes_data = filter(probes_data, !is.na(Hybrids))
+
+unique(probes_data$Hybrids)
+
+
+probes_data_long = probes_data %>% gather(trait,value,3:19)
+
+unique(probes_data_long$trait)
+
+probes_data_long = filter(probes_data_long, value>0)
+
+probes_data_long = mutate(probes_data_long, value = ifelse(value>1000, value/1000,value))
+
+probes_data_long = filter(probes_data_long, !is.na(value))
+
+probes_data_long$dat = as.Date(probes_data_long$`Date Time`)
+
+#2024-06-12	
+
+probes_data_long_all = filter(probes_data_long, dat>=as.Date('2024-06-12') 	)
+
+sondes_data_2_gather_summary_1 = probes_data_long_all %>% group_by(Hybrids,trait,dat) %>% arrange(dat) %>%summarise(mean_value=mean(value))
+
+sondes_data_2_gather_summary_1 = sondes_data_2_gather_summary_1 %>% mutate(trait_type = ifelse(trait %in% c("A1(5)","A2(15)","A3(25)","A4(35)","A5(45)","A6(55)","A7(65)","A8(75)","A9(85)"),"capacity sensors","temperature"))
+
+average_calculation = sondes_data_2_gather_summary_1 %>% group_by(dat,trait_type,Hybrids) %>% summarise(mean_value=mean(mean_value))
+
+average_calculation = average_calculation %>% mutate(trait= ifelse(trait_type =="capacity sensors","01_average_capacity","01_average_temperature"))
+
+sondes_data_2_gather_summary_1 = bind_rows(sondes_data_2_gather_summary_1,average_calculation)
+
+sondes_data_2_gather_summary_1 = sondes_data_2_gather_summary_1 %>% unite(hybrid_factor_trait, Hybrids,trait, sep="__", remove=F)
+
+sondes_data_2_gather_summary_2 = sondes_data_2_gather_summary_1 %>% group_by(Hybrids,trait) %>% arrange(dat) %>%  mutate(rank_day=row_number()) %>% filter(rank_day==1)
+
+#sondes_data_2_gather_summary_2 = sondes_data_2_gather_summary_1 %>% group_by(trait) %>% mutate(max_or_min= ifelse(mean_value==max(mean_value), "max","not_max"),coefficient= mean_value/min(mean_value), final_coefficient= coefficient) %>% unite(hybrid_factor_trait, hybrid_factor,trait, sep="__", remove=F) 
+
+sondes_data_2_gather_summary_2 = sondes_data_2_gather_summary_2 %>% group_by(trait) %>% mutate(max_or_min= ifelse(mean_value==max(mean_value), "max","min"),coefficient= max(mean_value)/mean_value, final_coefficient= ifelse(max_or_min=="min",coefficient,1)) %>% unite(hybrid_factor_trait, Hybrids,trait, sep="__", remove=F)
+
+#DT::datatable(sondes_data_2_gather_summary_2, filter="top")
+
+#sondes_data_2_gather_summary_3 = sondes_data_2_gather_summary_2 %>% dplyr::select(hybrid_factor_trait,final_coefficient)
+
+#sondes_data_2_gather_summary_1 = sondes_data_2_gather_summary_1 %>% group_by(hybrid_factor,trait,dat) %>% arrange(date) %>%summarise(mean_value=mean(mean_value))
+
+sondes_data_2_gather_summary_3 = sondes_data_2_gather_summary_2 %>% dplyr::select(hybrid_factor_trait,final_coefficient)
+
+#sondes_data_2_gather_summary_1 = sondes_data_2_gather_summary %>% group_by(hybrid_factor,trait,date) %>% arrange(date) %>%summarise(mean_value=mean(value))
+
+#sondes_data_2_gather_summary_1 = sondes_data_2_gather_summary_1 %>% unite(hybrid_factor_trait, hybrid_factor,trait, sep="__", remove=F)
+
+sondes_data_2_gather_summary_1 = merge(sondes_data_2_gather_summary_1,sondes_data_2_gather_summary_3,by="hybrid_factor_trait")
+
+sondes_data_2_gather_summary_1 = sondes_data_2_gather_summary_1 %>% mutate(value_transformed= mean_value*final_coefficient)
+
+#sondes_data_2_gather_summary_1$location_name = "POURSIUGUES (SSC6 75%)"
+
+
+
+
+
+
+
+
+
+```
+
+# Capacity sensors data - Time series visualization
+
+```{r message=FALSE, warning=FALSE, echo=FALSE,fig.height=20, fig.width=15}
+sondes_data_2_gather_summary_1 = sondes_data_2_gather_summary_1 %>% mutate(trait_type = ifelse(trait.x %in% c("A1(5)","A2(15)","A3(25)","A4(35)","A5(45)","A6(55)","A7(65)","A8(75)","A9(85)","01_average_capacity"),"capacity sensors","temperature"))
+
+
+
+sondes_data_2_gather_summary_1_plot = filter(sondes_data_2_gather_summary_1, trait_type=="capacity sensors")
+
+unique(sondes_data_2_gather_summary_1_plot$trait.x)
+
+p <- ggplot(sondes_data_2_gather_summary_1_plot, aes(x=as.Date(dat), y=mean_value, color=Hybrids,alpha=0.5)) +
+  geom_line() + 
+  xlab("")+ggtitle("Soil moisture - Raw data")+facet_grid(trait.x~trait_type, scales="free_y")
+plotly::ggplotly(p)
+```
+
+# Temperature data - Time series visualization
+
+```{r message=FALSE, warning=FALSE, echo=FALSE,fig.height=20, fig.width=15}
+#sondes_data_2_gather_summary_1 = sondes_data_2_gather_summary_1 %>% mutate(trait_type = ifelse(trait.x %in% c("A1(5)","A2(15)","A3(25)","A4(35)","A5(45)","A6(55)","A7(65)","A8(75)","A9(85)"),"capacity sensors","temperature"))
+
+
+
+sondes_data_2_gather_summary_1_plot = filter(sondes_data_2_gather_summary_1, trait_type!="capacity sensors")
+
+unique(sondes_data_2_gather_summary_1_plot$trait.x)
+
+p <- ggplot(sondes_data_2_gather_summary_1_plot, aes(x=as.Date(dat), y=mean_value, color=Hybrids,alpha=0.5)) +
+  geom_line() + 
+  xlab("")+ggtitle("Temperature - Raw data")+facet_grid(trait.x~trait_type, scales="free_y")
+plotly::ggplotly(p)
+```
+
+
+# Exploratory data analysis - Data normalization using a coefficient method
+
+
+- **Calculation of coefficient**:- Ratio of moisture level between maximum and all levels of moisture observed on the first day per location
+
+- The coefficient calculated per trait based on the first shared day across all hybrids was then propagated to the corresponsing values of that specific trait for the complete dataset  
+
+![](/mnt/data/coefficient_method_ssc_1.jpg)
+
+```{r message=FALSE, warning=FALSE, echo=FALSE}
+DT::datatable(sondes_data_2_gather_summary_1, filter="top")
+
+```
+
+
+# Capacity sensors data - Time series visualization
+
+```{r message=FALSE, warning=FALSE, echo=FALSE,fig.height=20, fig.width=15}
+#sondes_data_2_gather_summary_1 = sondes_data_2_gather_summary_1 %>% mutate(trait_type = ifelse(trait.x %in% c("A1(5)","A2(15)","A3(25)","A4(35)","A5(45)","A6(55)","A7(65)","A8(75)","A9(85)"),"capacity sensors","temperature"))
+
+
+
+sondes_data_2_gather_summary_1_plot = filter(sondes_data_2_gather_summary_1, trait_type=="capacity sensors")
+
+unique(sondes_data_2_gather_summary_1_plot$trait.x)
+
+p <- ggplot(sondes_data_2_gather_summary_1_plot, aes(x=as.Date(dat), y=value_transformed, color=Hybrids,alpha=0.5)) +
+  geom_line() + 
+  xlab("")+ggtitle("Soil moisture - Using the Coefficient method")+facet_grid(trait.x~trait_type, scales="free_y")
+plotly::ggplotly(p)
+```
+
+# Temperature data - Time series visualization
+
+```{r message=FALSE, warning=FALSE, echo=FALSE,fig.height=20, fig.width=15}
+#sondes_data_2_gather_summary_1 = sondes_data_2_gather_summary_1 %>% mutate(trait_type = ifelse(trait.x %in% c("A1(5)","A2(15)","A3(25)","A4(35)","A5(45)","A6(55)","A7(65)","A8(75)","A9(85)"),"capacity sensors","temperature"))
+
+
+
+sondes_data_2_gather_summary_1_plot = filter(sondes_data_2_gather_summary_1, trait_type!="capacity sensors")
+
+unique(sondes_data_2_gather_summary_1_plot$trait.x)
+
+p <- ggplot(sondes_data_2_gather_summary_1_plot, aes(x=as.Date(dat), y=value_transformed, color=Hybrids,alpha=0.5)) +
+  geom_line() + 
+  xlab("")+ggtitle("Temperature - Using the Coefficient method")+facet_grid(trait.x~trait_type, scales="free_y")
+plotly::ggplotly(p)
+```
