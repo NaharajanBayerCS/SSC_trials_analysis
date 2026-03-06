@@ -1,0 +1,928 @@
+---
+title: "Analysis of FTS data relating to Start flex Project - Statistical Analysis and Presentation"
+author: "Naharajan Lakshmanaperumal, Senior Data Scientist, EMEA Field Trialing"
+date: "11.07.2023"
+output:
+  slidy_presentation: default
+  beamer_presentation: default
+  pdf_document: default
+  ioslides_presentation: default
+  word_document:
+    reference_docx: south_africa_variety_data_report_final.docx
+always_allow_html: yes
+---
+
+# Contents
+
+<div class="logos"><img src="/mnt/images/emea_md_logo_3.PNG" width="50px" align="right"></div>
+ 
+<div class="logos"><img src="/mnt/images/RZ_EMEA_Sign_Claim_Screen_RGB_on_white (1) (1).png" width="100px" align="right"></div>
+
+
+- Data Summary
+
+- Exploratory data analysis
+
+- Statistical analysis 
+  
+- Discussion
+
+<div class="logos"><img src="/mnt/images/restricted.PNG" width="100px" align="right"></div>
+
+
+# Start flex project - Project Summary
+
+
+<div class="logos"><img src="/mnt/images/emea_md_logo_3.PNG" width="50px" align="right"></div>
+ 
+<div class="logos"><img src="/mnt/images/RZ_EMEA_Sign_Claim_Screen_RGB_on_white (1) (1).png" width="100px" align="right"></div>
+
+```{r message=FALSE, warning=FALSE, echo=FALSE}
+library(readr)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(lmerTest)
+library(multcompView)
+#install.packages("lmerTest")
+#install.packages("multcompView")
+start_flex = read_csv("/mnt/data/Corn_trials_Romania_Hungary_2021_to_2023_data.csv")
+
+filter_data = readxl::read_excel("/mnt/data/Copy of Start flex table.xlsx")
+```
+
+```{r message=FALSE, warning=FALSE, echo=F}
+
+DT::datatable(filter_data)
+```
+
+<div class="logos"><img src="/mnt/images/restricted.PNG" width="100px" align="right"></div>
+
+
+
+
+```{r message=FALSE, warning=FALSE, echo=F}
+# FTS data transformation
+#set unique ids for field, plot, set and trait
+ 
+set_unique_ids = function(fts.df){
+fts.df = fts.df%>% unite(trait, OBS_observationRefCd, OBS_observationName,OBS_uom,sep="_",remove=F)
+ 
+#unique set name
+ 
+fts.df = fts.df%>% unite(unique_set_name, SETS_setName, midas_field_id,FIELD_year,sep="_",remove=F)
+ 
+#unique plot name
+ 
+fts.df = fts.df%>% unite(unique_plot_id, SETS_setName, midas_field_id,PLT_midasPlotId,FIELD_year,sep="_",remove=F)
+ 
+fts.df = fts.df%>% unite(unique_location_name, SETS_setName,FIELD_Location, FIELD_field_latitude,FIELD_field_longitude,FIELD_year,sep="_",remove=F)
+ 
+return(fts.df)
+ 
+}
+ 
+start_flex_1 = set_unique_ids(start_flex)
+
+ 
+#remove fts flags
+ 
+remove_fts_flags = function(fts.df){
+  fts.df = fts.df %>% filter(PLT_isPlotDeactivated=="FALSE")
+  fts.df = fts.df %>% filter(REP_isAbandoned=="FALSE")
+  fts.df = fts.df %>% filter(OBS_isDeactivated=="FALSE")
+  fts.df = fts.df %>% filter(OBS_isDsrDeactivated=="FALSE")
+  return(fts.df)
+}
+ 
+start_flex_2 = remove_fts_flags(start_flex_1)
+
+ 
+# table(start_flex_2$REP_isRejected)
+# table(start_flex_2$REP_isRelinquished)
+# table(start_flex_2$REP_isMapped)
+# table(start_flex_2$REP_isAbandoned)
+# table(start_flex_2$OBS_isDeactivated)
+# table(start_flex_2$OBS_isDsrDeactivated)
+# table(start_flex_2$PLT_isPlotDeactivated)
+#unique(start_flex_2$productName)
+ 
+#convert csw sets to long format
+ 
+convert_fts_csw_data_to_tidy_format = function(fts.df){
+hybrids = fts.df %>% dplyr::select(FIELD_Country,FIELD_State,FIELD_County,FIELD_Location,FIELD_locationName,FIELD_field_latitude,FIELD_field_longitude,unique_location_name,midas_plot_id,midas_field_id,unique_plot_id,SETS_setName,FIELD_year,REP_repetitionNumber,productName,productBrand)
+
+#hybrids = start_flex_2 %>% dplyr::select(FIELD_Country,FIELD_State,FIELD_County,FIELD_Location,FIELD_locationName,FIELD_field_latitude,FIELD_field_longitude,unique_location_name,midas_plot_id,midas_field_id,unique_plot_id,SETS_setName,FIELD_year,REP_repetitionNumber,productName,productBrand)
+ 
+#hybrids = ssc_silage_2 %>% select(FIELD_Country,FIELD_State,FIELD_County,FIELD_Location,FIELD_locationName,FIELD_field_latitude,FIELD_field_longitude,unique_location_name,midas_plot_id,midas_field_id,unique_plot_id,TEST_SET_NAME,FIELD_year,REP_repetitionNumber,ENT_group1,ENT_group2,productName,productBrand)
+
+
+ 
+ 
+traits = unique(fts.df[,c(8,73,81)])
+
+#traits = unique(start_flex_2[,c(8,73,81)])
+ 
+hybrids = unique(hybrids)
+ 
+#silage_7= traits %>% filter(trait==traits$trait[1])
+ 
+#silage_7_wide = silage_7 %>% spread(trait,OBS_numValue)
+#silage_7_wide_1 = silage_7_wide[,c(80,82)]
+ 
+#traits = filter(traits,!trait%in%c("COT_Cold Tolerance_Rating","PLOTUNI_Plot Uniformity_Rating", "EHT_Ear Height_Centimeters","HVPOP_SUB_Sub Sample - Harvest Population_1000 Plants/Hectare"))
+plots.df=unique(traits$unique_plot_id)
+plots.df= as.data.frame(plots.df)
+names(plots.df) = "unique_plot_id"
+all_traits = unique(traits$trait)
+traits.df=data.frame()
+for(i in 1:length(all_traits)){
+  #i=10
+  #print(all_traits[i])
+  silage_8= traits %>% filter(trait==all_traits[i])
+  silage_8 = silage_8 %>% group_by(trait,unique_plot_id) %>% summarise(OBS_numValue=mean(OBS_numValue,na.rm=T))
+  silage_8_wide = silage_8 %>% spread(trait,OBS_numValue)
+  silage_8_wide$trait = NULL
+  silage_8_wide =unique(silage_8_wide)
+  #silage_7_wide = silage_7_wide %>% left_join(silage_8)
+  plots.df =left_join(plots.df,silage_8_wide)
+  
+ 
+}
+ 
+final_tidy_data = inner_join(plots.df,hybrids)
+final_tidy_data= unique(final_tidy_data)
+ 
+return(final_tidy_data)
+ 
+}
+
+# needed_traits = c("COT")
+# 
+# start_flex_3 = filter(start_flex_2,OBS_observationRefCd %in% needed_traits)
+# 
+# table_cot = table(start_flex_3$unique_plot_id)
+# table_cot=as.data.frame(table_cot)
+#  
+# start_flex_4 = convert_fts_csw_data_to_tidy_format(start_flex_3)
+
+
+needed_traits = c("YLD","MST","COT","EVG")
+
+start_flex_3 = filter(start_flex_2,OBS_observationRefCd %in% needed_traits)
+ 
+start_flex_4 = convert_fts_csw_data_to_tidy_format(start_flex_3)
+
+intresting_hybrids = c(filter_data$Comparison, filter_data$`Start Flex`)
+
+start_flex_5 = filter(start_flex_4, productName %in% intresting_hybrids)
+
+start_flex_5 = start_flex_5 %>% mutate(hybrid_type = ifelse(productName %in%filter_data$`Start Flex` ,"Start flex hybrid","Comparison"))
+```
+
+
+# Trial locations - Visualization in a map
+
+- Trial data relating to Corn from FTS Apollo (from Crop Science Warehouse, CSW)
+
+```{r message=FALSE, warning=FALSE, echo=F,fig.width=20, fig.height=20}
+library(htmltools)
+library(plotly)
+library(crosstalk)
+library(leaflet)
+map_data = start_flex_1 %>% dplyr::select(FIELD_year,unique_set_name,unique_location_name,FIELD_Country,FIELD_locationName,FIELD_State,FIELD_County,FIELD_field_latitude,FIELD_field_longitude) %>% unique()
+#gps_2 = unique(gps_1[,c(1,2,3,12,14,15)])
+names(map_data)[8] = "latitude"
+names(map_data)[9] = "longitude"
+shared_gps <- SharedData$new(map_data)
+bscols(widths = c(1,6,4),
+
+
+  list(
+        filter_checkbox("Year", "Season", shared_gps, ~as.factor(FIELD_year), inline = TRUE),
+        filter_checkbox("Country", "Country", shared_gps, ~as.factor(FIELD_Country), inline = TRUE)
+    
+    #filter_slider("Mega Environment", "Mega Environment", shared_gps, ~as.factor(`Mega Environment`), width = "100%")
+    #filter_select("auto", "Automatic", shared_gps, ~CSAM)
+  ),
+  #ggplotly(ggplot(shared_gps,aes(Country.x))+geom_bar()+facet_grid(~STAM.x,scales = "free_x")+ 
+  #theme( axis.text = element_text( size = 10 ),
+  #       axis.text.x = element_text(angle=90, size = 10 ),
+  #       axis.title = element_text( size = 10, face = "bold" ),strip.text = element_text(size = 13, face = 'bold') )),
+  leaflet(shared_gps, width = "100%", height = 300) %>%
+    addTiles() %>%
+    addMarkers()
+  ,
+  DT::datatable(shared_gps, filter="top")
+)
+```
+
+# FTS trial data - Summary
+
+**Number of trials by country per season**
+
+```{r message=FALSE, warning=FALSE, echo=F}
+fts_summary = start_flex_1 %>% group_by(SETS_setName,protocolName,FIELD_Country,FIELD_year) %>% summarise(number_of_trials = length(unique(unique_location_name))) %>% arrange(FIELD_year)
+
+DT::datatable(fts_summary)
+```
+
+
+**Number of hybrids tested by country per season**
+
+```{r message=FALSE, warning=FALSE, echo=F}
+fts_summary_1 = start_flex_1 %>% group_by(SETS_setName,protocolName,FIELD_Country,FIELD_year) %>% summarise(number_of_hybrids =length(unique(unique_location_name)), number_of_trials = length(unique(productName)))%>% arrange(FIELD_year)
+
+DT::datatable(fts_summary_1)
+```
+
+**Star flex and comparison hybrids**
+
+```{r message=FALSE, warning=FALSE, echo=F}
+
+DT::datatable(filter_data)
+```
+
+
+
+# Calculating the raw CV per location for the yield observation
+
+- The raw coefficient of variation (CV) is defined as the ratio of the standard deviation to the mean. It shows the extent of variability in relation to the mean of the population.
+
+```{r message=FALSE, warning=FALSE, echo=F}
+fts_summary_1 = start_flex_4 %>% group_by(FIELD_Country,FIELD_year,unique_location_name) %>% summarise(mean_field_yield_Quintals_per_Hectare = mean(`YLD_Yield_Quintals/Hectare`,na.rm=T), sd=sd(`YLD_Yield_Quintals/Hectare`,na.rm=T),cv=(sd/mean_field_yield_Quintals_per_Hectare)*100)%>% arrange(FIELD_year)
+
+fts_summary_1 = fts_summary_1 %>% mutate(high_cv_flag = ifelse(cv>=20, "TRUE","FALSE"))
+
+DT::datatable(fts_summary_1, filter="top")
+
+```
+
+# Exploratory data analysis - Early vigor rating
+
+**1-9:- 1-excellent and 9-bad**
+
+```{r message=FALSE, warning=FALSE, echo=F,fig.width=20}
+#install.packages("tidytext")
+library(tidytext)
+fts_summary_all = start_flex_5 %>%  group_by(productName,hybrid_type) %>% summarise(mean_field_yield_Quintals_per_Hectare = mean(`EVG_Early Vigor_Rating`,na.rm=T), sd=sd(`EVG_Early Vigor_Rating`,na.rm=T),cv=(sd/mean_field_yield_Quintals_per_Hectare)*100)
+
+#fts_summary_all = filter(fts_summary_all, FIELD_year!=2023)
+
+plot_1 = ggplot(fts_summary_all,aes(reorder(productName,-mean_field_yield_Quintals_per_Hectare),mean_field_yield_Quintals_per_Hectare, fill=hybrid_type))+geom_bar(stat="identity")+ 
+  theme( axis.text = element_text( size = 10 ),
+         axis.text.x = element_text( angle=90,size = 10 ),
+         axis.title = element_text( size = 10, face = "bold" ),strip.text = element_text(size = 13, face = 'bold') )+
+  geom_errorbar(aes(ymin=mean_field_yield_Quintals_per_Hectare-sd, ymax=mean_field_yield_Quintals_per_Hectare+sd), width=.2,
+                 position=position_dodge(.9)) +ylab("EVG_Early Vigor_Rating (1-9:- 1-excellent and 9-bad)")+ggtitle("Average EVG_Early Vigor_Rating across all locations")+xlab("Hybrid name")+
+    scale_x_reordered()+coord_flip()
+plot_1
+
+fts_summary_1 = start_flex_5 %>% group_by(FIELD_year,productName,hybrid_type) %>% summarise(mean_field_yield_Quintals_per_Hectare = mean(`EVG_Early Vigor_Rating`,na.rm=T), sd=sd(`EVG_Early Vigor_Rating`,na.rm=T),cv=(sd/mean_field_yield_Quintals_per_Hectare)*100)%>% arrange(FIELD_year)
+
+#fts_summary_1 = filter(fts_summary_1, FIELD_year!=2023)
+
+plot_1 = ggplot(fts_summary_1,aes(reorder_within(productName,-mean_field_yield_Quintals_per_Hectare,as.factor(FIELD_year)),mean_field_yield_Quintals_per_Hectare, fill=hybrid_type))+geom_bar(stat="identity")+ 
+  theme( axis.text = element_text( size = 10 ),
+         axis.text.x = element_text( angle=90,size = 10 ),
+         axis.title = element_text( size = 10, face = "bold" ),strip.text = element_text(size = 13, face = 'bold') )+
+  geom_errorbar(aes(ymin=mean_field_yield_Quintals_per_Hectare-sd, ymax=mean_field_yield_Quintals_per_Hectare+sd), width=.2,
+                 position=position_dodge(.9)) +ylab("EVG_Early Vigor_Rating (1-9:- 1-excellent and 9-bad)")+ggtitle("Average EVG_Early Vigor_Rating across all locations")+xlab("Hybrid name")+facet_wrap(~FIELD_year,scales="free_y")+
+    scale_x_reordered()+coord_flip()
+plot_1
+
+
+
+```
+
+
+# Exploratory data analysis - Cold Tolerance Rating
+
+**1-9:- 1-excellent and 9-bad**
+
+```{r message=FALSE, warning=FALSE, echo=F,fig.width=20}
+#install.packages("tidytext")
+library(tidytext)
+fts_summary_all = start_flex_5 %>%  group_by(productName,hybrid_type) %>% summarise(mean_field_yield_Quintals_per_Hectare = mean(`COT_Cold Tolerance_Rating`,na.rm=T), sd=sd(`COT_Cold Tolerance_Rating`,na.rm=T),cv=(sd/mean_field_yield_Quintals_per_Hectare)*100)
+
+#fts_summary_all = filter(fts_summary_all, FIELD_year!=2023)
+
+plot_1 = ggplot(fts_summary_all,aes(reorder(productName,-mean_field_yield_Quintals_per_Hectare),mean_field_yield_Quintals_per_Hectare, fill=hybrid_type))+geom_bar(stat="identity")+ 
+  theme( axis.text = element_text( size = 10 ),
+         axis.text.x = element_text( angle=90,size = 10 ),
+         axis.title = element_text( size = 10, face = "bold" ),strip.text = element_text(size = 13, face = 'bold') )+
+  geom_errorbar(aes(ymin=mean_field_yield_Quintals_per_Hectare-sd, ymax=mean_field_yield_Quintals_per_Hectare+sd), width=.2,
+                 position=position_dodge(.9)) +ylab("COT_Cold Tolerance_Rating (1-9:- 1-excellent and 9-bad)")+ggtitle("Average COT_Cold Tolerance_Rating across all locations")+xlab("Hybrid name")+
+    scale_x_reordered()+coord_flip()
+plot_1
+
+fts_summary_1 = start_flex_5 %>% group_by(FIELD_year,productName,hybrid_type) %>% summarise(mean_field_yield_Quintals_per_Hectare = mean(`COT_Cold Tolerance_Rating`,na.rm=T), sd=sd(`COT_Cold Tolerance_Rating`,na.rm=T),cv=(sd/mean_field_yield_Quintals_per_Hectare)*100)%>% arrange(FIELD_year)
+
+#fts_summary_1 = filter(fts_summary_1, FIELD_year!=2023)
+
+plot_1 = ggplot(fts_summary_1,aes(reorder_within(productName,-mean_field_yield_Quintals_per_Hectare,as.factor(FIELD_year)),mean_field_yield_Quintals_per_Hectare, fill=hybrid_type))+geom_bar(stat="identity")+ 
+  theme( axis.text = element_text( size = 10 ),
+         axis.text.x = element_text( angle=90,size = 10 ),
+         axis.title = element_text( size = 10, face = "bold" ),strip.text = element_text(size = 13, face = 'bold') )+
+  geom_errorbar(aes(ymin=mean_field_yield_Quintals_per_Hectare-sd, ymax=mean_field_yield_Quintals_per_Hectare+sd), width=.2,
+                 position=position_dodge(.9)) +ylab("COT_Cold Tolerance_Rating (1-9:- 1-excellent and 9-bad)")+ggtitle("Average COT_Cold Tolerance_Rating across all locations")+xlab("Hybrid name")+facet_wrap(~FIELD_year,scales="free_y")+
+    scale_x_reordered()+coord_flip()
+plot_1
+
+
+
+```
+
+
+# Exploratory data analysis - Yield in quintals/hectare
+
+```{r message=FALSE, warning=FALSE, echo=F,fig.width=20}
+#install.packages("tidytext")
+library(tidytext)
+fts_summary_all = start_flex_5 %>% filter(FIELD_year!=2023) %>% group_by(productName,hybrid_type) %>% summarise(mean_field_yield_Quintals_per_Hectare = mean(`YLD_Yield_Quintals/Hectare`,na.rm=T), sd=sd(`YLD_Yield_Quintals/Hectare`,na.rm=T),cv=(sd/mean_field_yield_Quintals_per_Hectare)*100)
+
+#fts_summary_all = filter(fts_summary_all, FIELD_year!=2023)
+
+plot_1 = ggplot(fts_summary_all,aes(reorder(productName,mean_field_yield_Quintals_per_Hectare),mean_field_yield_Quintals_per_Hectare, fill=hybrid_type))+geom_bar(stat="identity")+ 
+  theme( axis.text = element_text( size = 10 ),
+         axis.text.x = element_text( angle=90,size = 10 ),
+         axis.title = element_text( size = 10, face = "bold" ),strip.text = element_text(size = 13, face = 'bold') )+
+  geom_errorbar(aes(ymin=mean_field_yield_Quintals_per_Hectare-sd, ymax=mean_field_yield_Quintals_per_Hectare+sd), width=.2,
+                 position=position_dodge(.9)) +ylab("Yield (quintals/hectare)")+ggtitle("Average yield across all locations")+xlab("Hybrid name")+
+    scale_x_reordered()+coord_flip()
+plot_1
+
+fts_summary_1 = start_flex_5 %>% group_by(FIELD_year,productName,hybrid_type) %>% summarise(mean_field_yield_Quintals_per_Hectare = mean(`YLD_Yield_Quintals/Hectare`,na.rm=T), sd=sd(`YLD_Yield_Quintals/Hectare`,na.rm=T),cv=(sd/mean_field_yield_Quintals_per_Hectare)*100)%>% arrange(FIELD_year)
+
+fts_summary_1 = filter(fts_summary_1, FIELD_year!=2023)
+
+plot_1 = ggplot(fts_summary_1,aes(reorder_within(productName,mean_field_yield_Quintals_per_Hectare,as.factor(FIELD_year)),mean_field_yield_Quintals_per_Hectare, fill=hybrid_type))+geom_bar(stat="identity")+ 
+  theme( axis.text = element_text( size = 10 ),
+         axis.text.x = element_text( angle=90,size = 10 ),
+         axis.title = element_text( size = 10, face = "bold" ),strip.text = element_text(size = 13, face = 'bold') )+
+  geom_errorbar(aes(ymin=mean_field_yield_Quintals_per_Hectare-sd, ymax=mean_field_yield_Quintals_per_Hectare+sd), width=.2,
+                 position=position_dodge(.9)) +ylab("Yield (quintals/hectare)")+ggtitle("Average yield across all locations")+xlab("Hybrid name")+facet_wrap(~FIELD_year,scales="free_y")+
+    scale_x_reordered()+coord_flip()
+plot_1
+
+
+
+```
+
+
+# Exploratory data analysis - Moisture percent
+
+```{r message=FALSE, warning=FALSE, echo=F,fig.width=20}
+#install.packages("tidytext")
+library(tidytext)
+fts_summary_all = start_flex_5 %>% filter(FIELD_year!=2023) %>% group_by(productName,hybrid_type) %>% summarise(mean_field_yield_Quintals_per_Hectare = mean(`MST_Percent Moisture_Percent`,na.rm=T), sd=sd(`MST_Percent Moisture_Percent`,na.rm=T),cv=(sd/mean_field_yield_Quintals_per_Hectare)*100)
+
+#fts_summary_all = filter(fts_summary_all, FIELD_year!=2023)
+
+plot_1 = ggplot(fts_summary_all,aes(reorder(productName,mean_field_yield_Quintals_per_Hectare),mean_field_yield_Quintals_per_Hectare, fill=hybrid_type))+geom_bar(stat="identity")+ 
+  theme( axis.text = element_text( size = 10 ),
+         axis.text.x = element_text( angle=90,size = 10 ),
+         axis.title = element_text( size = 10, face = "bold" ),strip.text = element_text(size = 13, face = 'bold') )+
+  geom_errorbar(aes(ymin=mean_field_yield_Quintals_per_Hectare-sd, ymax=mean_field_yield_Quintals_per_Hectare+sd), width=.2,
+                 position=position_dodge(.9)) +ylab("MST_Percent Moisture_Percent")+ggtitle("Average moisture across all locations")+xlab("Hybrid name")+
+    scale_x_reordered()+coord_flip()
+plot_1
+
+fts_summary_1 = start_flex_5 %>% group_by(FIELD_year,productName,hybrid_type) %>% summarise(mean_field_yield_Quintals_per_Hectare = mean(`MST_Percent Moisture_Percent`,na.rm=T), sd=sd(`MST_Percent Moisture_Percent`,na.rm=T),cv=(sd/mean_field_yield_Quintals_per_Hectare)*100)%>% arrange(FIELD_year)
+
+fts_summary_1 = filter(fts_summary_1, FIELD_year!=2023)
+
+plot_1 = ggplot(fts_summary_1,aes(reorder_within(productName,mean_field_yield_Quintals_per_Hectare,as.factor(FIELD_year)),mean_field_yield_Quintals_per_Hectare, fill=hybrid_type))+geom_bar(stat="identity")+ 
+  theme( axis.text = element_text( size = 10 ),
+         axis.text.x = element_text( angle=90,size = 10 ),
+         axis.title = element_text( size = 10, face = "bold" ),strip.text = element_text(size = 13, face = 'bold') )+
+  geom_errorbar(aes(ymin=mean_field_yield_Quintals_per_Hectare-sd, ymax=mean_field_yield_Quintals_per_Hectare+sd), width=.2,
+                 position=position_dodge(.9)) +ylab("MST_Percent Moisture_Percent")+ggtitle("Average moisture across all locations")+xlab("Hybrid name")+facet_wrap(~FIELD_year,scales="free_y")+
+    scale_x_reordered()+coord_flip()
+plot_1
+
+
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+```{r message=FALSE, warning=FALSE, echo=F}
+###Function which flags plot values with DSR > threshold for DSR traits 
+library(lmerTest)
+data_with_model_outlier_check_across_location = function(dataset, dsr.threshold){
+  outlier.df = NULL
+    traits= unique(dataset$trait)
+ 
+  for(i in 1:length(traits)){
+  #dataset$id = seq(1,dim(dataset)[1],1)
+    #print(traits[i])
+  ## Subsetting only for the DSR trait
+    temp = dataset %>% filter(trait == traits[i])
+    temp = filter(temp, value!="NA")
+    temp$row_number=rownames(temp)
+  ## Subsetting based on missing data
+    #temp = temp[temp$MissingDataFlag==FALSE,]
+  
+  ## Fitting the simple model
+     model = lmerTest::lmer(value ~ productName+ (1|unique_location_name), data = temp)
+  
+  
+  ## Calculating Studentized residuals, and taking absolute values
+    Stud.Residual = abs(stats::rstudent(model))
+    #print(length(Stud.Residual))
+  ## Appending DSR values to the existing table
+    sr.df=as.data.frame(Stud.Residual)
+    sr.df$row_number=rownames(sr.df)
+    temp = temp%>% left_join(sr.df)
+    #temp = as.data.frame(cbind(temp,Stud.Residual))
+    temp$trait = traits[i]
+  
+  ## Flagging DSR outlier based on threshold
+    temp$DSR_by_location_outlier_flag = ifelse(abs(temp$Stud.Residual)>dsr.threshold,TRUE,FALSE)
+  
+  ## Merging with original dataset
+  #temp = temp[,c("id","Stud.Residual","DSR_outlier_flag")]
+  #dataset1 = merge(dataset,temp,by = "id", all.x = TRUE)
+  #dataset1 = dataset1[,-1]
+  outlier.df = rbind(outlier.df,temp)
+  }
+  return(outlier.df)
+}
+ 
+ 
+#by location
+across_location_analysis = function(data_df_long){
+  #traits = unique(data_df_long$trait)
+traits= unique(data_df_long$trait)
+ 
+  analysis_type="By location"
+  means.df = NULL
+  anova.df=NULL
+  delta_table = NULL
+  for(i in 1:length(traits)){
+    #print(traits[i])
+    temp = filter(data_df_long, trait == traits[i])
+    temp = filter(temp, value!="NA")
+    #temp = filter(data_df_long, trait == traits[i])
+    #temp_wide=temp %>% spread(trait, value)
+      model = lmerTest::lmer(value ~ productName+ (1|unique_location_name), data = temp)
+    anova_table= create_anova_table_new(model,temp,traits[i],analysis_type)
+    anova_table$Field = NULL
+    anova_table$Trait= traits[i]
+     anova_table$number_of_trials= length(unique(data_df_long$unique_location_name))
+      #means.df = rbind(means.df,lsm.df)
+      #anova.df=rbind(anova.df,anova_table)
+      lsm.df = create_OneFactor_lsmeans_table_new(model, temp,traits[i],analysis_type)
+      lsm.df$Field = NULL
+    lsm.df$Trait= traits[i]
+     lsm.df$number_of_trials= length(unique(data_df_long$unique_location_name))
+      #lsm.df$Field = traits[i]
+      #anova_table= create_anova_table_new(model,temp,traits[i],analysis_type)
+      means.df = rbind(means.df,lsm.df)
+      anova.df=rbind(anova.df,anova_table)
+      delta.df = create_OneFactor_Contrast_Table_new(model,temp,traits[i],analysis_type)
+      delta.df$Field = NULL
+    delta.df$Trait= traits[i]
+    delta.df$number_of_trials= length(unique(data_df_long$unique_location_name))
+      delta_table = rbind(delta_table,delta.df)
+  }
+  
+return(list(means.df,anova.df,delta_table))
+}
+ 
+create_OneFactor_lsmeans_table_new = function(model,test.set,field,analysis_type){
+  lsm1 = emmeans::lsmeans(model,~productName)  
+  lsm1.df = multcomp::cld(lsm1,alpha=0.1,Letters=LETTERS,sort=TRUE,adjust="tukey")
+  Factor = rep("Treatment1",dim(lsm1.df)[1])
+  #Protocol = rep(unique(test.set$Protocol),dim(lsm1.df)[1])
+  #Set = rep(unique(test.set$SET),dim(lsm1.df)[1])
+  names(lsm1.df)[1] = "Level"
+  lsm1.df = data.frame(Factor,lsm1.df$Level,lsm1.df$lsmean,lsm1.df$SE,lsm1.df$df,lsm1.df$lower.CL,lsm1.df$upper.CL,lsm1.df$.group)
+  names(lsm1.df) = c("Factor","Group1","lsmean","SE","DF","Lower_CI","Upper_CI","Group")
+  lsm1.df$Field = field
+  lsm1.df$analysis_type=analysis_type
+  lsm1.df= lsm1.df %>% mutate_if(is.numeric, round, 2)
+  return(lsm1.df)
+}
+ 
+create_anova_table_new = function(model,test.set, field,analysis_type){
+  anv = as.data.frame(anova(model))
+  Protocol = rep(unique(test.set$PROTOCOL),dim(anv)[1])
+ # Set = rep(unique(test.set$SET),dim(anv)[1])
+  #Effect = row.names(anv)
+  #anova.table = data.frame(Protocol,Effect,anv[,2:dim(anv)[2]])
+  anv$CV = sjstats::cv(model)*100
+  #anv$marginal_rsquared = round(MuMIn::r.squaredGLMM(model)[1],2)
+  #anv$rsquared = round(MuMIn::r.squaredGLMM(model)[2],2)
+  anv= anv %>% mutate_if(is.numeric, round, 3)
+  anv = anv %>% mutate(pvalue= format.pval(`Pr(>F)`,digits=2, eps=0.001, nsmall=3))
+  anv$Field = location
+  anv$analysis_type = analysis_type
+  
+anv = anv %>% mutate(Significance=ifelse(`Pr(>F)`<0.05, "Significant","Not significant"))
+#https://davidgohel.github.io/flextable/articles/format.html
+#print(names(anv))
+anv = anv[c(9,10,2,7:8)]
+ # anova.table$Num.Fields = n.fields
+#  anova.table$Trait = trait.name
+  #colnames(anova.table) = c("Protocol","Effect","numDF","denDF","F-value","P-value","CV")
+  #anv$field=field
+  
+  return(anv)
+}
+ 
+ 
+create_OneFactor_Contrast_Table_new = function(model,test.set, field,analysis_type){
+  lsm1 = emmeans::lsmeans(model,~productName)
+  delta1 = emmeans::contrast(lsm1,method="pairwise")
+  delta1.df = as.data.frame(summary(delta1,adjust="Tukey"))
+  Factor = rep("Treatment1",dim(delta1.df)[1])
+  #Protocol = rep(unique(test.set$PROTOCOL),dim(delta1.df)[1])
+  #Set = rep(unique(test.set$SET),dim(delta1.df)[1])
+  
+  ## separating contrast column to treatment 1 and treatment 2
+  
+  delta1.df = delta1.df %>% mutate(Significance=ifelse(p.value<0.05, "Significant", ifelse(p.value >= 0.05 & p.value<0.1,"Significant","Not significant")))
+  ## Parsing the Contrast column and generating the first and second columns
+  # contrast.rcbd = as.character(delta1.df$contrast)
+  # V1 = character(length = dim(delta1.df)[1])
+  # V2 = character(length = dim(delta1.df)[1])
+  # for(j in 1:dim(delta1.df)[1]){
+  #   contrast.part = strsplit(contrast.rcbd[j]," - ")
+  #   V1[j] = contrast.part[[1]][1]
+  #   V2[j] = contrast.part[[1]][2]
+  # }
+  # delta1.df = data.frame(Protocol,Set,Factor,V1,V2,delta1.df$estimate,delta1.df$p.value) 
+  # delta1.df$sig.1 = ifelse(delta1.df$delta1.df.p.value<0.1,TRUE,FALSE)
+  # names(delta1.df) = c("Protocol","Set","Factor","V1","V2","Diff","Pvalue","Sig_At_10percent")
+  #delta1.df$Observation = field
+  delta1.df$Field=field
+  delta1.df$analysis_type = analysis_type
+  return(delta1.df)
+}
+ 
+ 
+ 
+ 
+plot_lsmeans = function(lsm1_df){
+names(lsm1_df)[7]="group"
+lsm1_df= lsm1_df %>%
+  mutate_if(is.character, str_trim)
+lsm1_df= lsm1_df %>%
+  mutate(across(where(is.character), str_remove_all, pattern = fixed(" ")))
+ 
+lsm1_df$group = as.factor(lsm1_df$Group)
+lsm1_df= lsm1_df %>% mutate_if(is.numeric, round, 2)
+pd <- position_dodge(0.1)
+plot_lsmeans=ggplot(lsm1_df,aes(reorder(Group1,-lsmean),lsmean, fill=group))+geom_bar(stat="identity")+xlab("Product")+ylab(" LSMeans")+
+  #theme_classic() + 
+  theme( axis.text = element_text( size = 10 ),
+         axis.text.x = element_text( size = 10 ),
+         axis.title = element_text( size = 10, face = "bold" ),strip.text = element_text(size = 13, face = 'bold') ) +
+     geom_text(aes(label=lsmean), position=pd, vjust=0.005, size=3)+ theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))+facet_wrap(~Trait, scales="free")+
+  geom_errorbar(aes(ymin=lsmean-SE, ymax=lsmean+SE), width=.2,
+                 position=position_dodge(.9))
+print(plot_lsmeans)
+  
+}
+```
+
+
+
+# Statistical analysis workflow
+ 
+Step 1:- Statistical model outlier detection to detect the outliers
+ 
+    Model used: Linear mixed effect model (LME) in R
+ 
+    Fixed variable: Hybrid
+ 
+    Random variables: Location
+ 
+    Outlier threshold :- Studentized residual of +-3.5
+ 
+Step 2:- Across location statistical analysis to look for significant differences between the different hybrids 
+ 
+    Model used: Linear mixed effect model (LME) in R
+ 
+    Fixed variable: Hybrid
+ 
+    Random variables: Location
+ 
+### Outlier analysis 
+ 
+```{r message=FALSE, warning=FALSE, echo=F}
+start_flex_5_long = start_flex_5 %>% gather(trait, value, 2:5)
+ 
+#all_disease_long = all_disease_long%>% unite(trait,assessment_timing,type, sep="__", remove=F)
+ 
+#all_disease_long_goe1 = filter(all_disease_long, location =="GOE1")
+ 
+outlier_df= data_with_model_outlier_check_across_location(start_flex_5_long,3.5)
+ 
+table(outlier_df$DSR_by_location_outlier_flag)
+ 
+DT::datatable(outlier_df, filter="top")
+```
+ 
+ 
+# Across location analysis - COT_Cold Tolerance_Rating
+
+```{r message=FALSE, warning=FALSE, echo=F,fig.width=15}
+final_results = across_location_analysis(outlier_df)
+ 
+lsmeans_results = as.data.frame(final_results[1])
+anova_results = as.data.frame(final_results[2])
+contrast_results = as.data.frame(final_results[3])
+ 
+DT::datatable(anova_results)
+ 
+DT::datatable(lsmeans_results, extensions = "Buttons", 
+             options = list(paging = TRUE,
+                            scrollX=TRUE, 
+                            searching = TRUE,
+                            ordering = TRUE,
+                            dom = 'Bfrtip',
+                            buttons = c('copy', 'csv', 'excel', 'pdf'),
+                            pageLength=5, 
+                            lengthMenu=c(3,5,10) ))
+ 
+DT::datatable(contrast_results, extensions = "Buttons", 
+             options = list(paging = TRUE,
+                            scrollX=TRUE, 
+                            searching = TRUE,
+                            ordering = TRUE,
+                            dom = 'Bfrtip',
+                            buttons = c('copy', 'csv', 'excel', 'pdf'),
+                            pageLength=5, 
+                            lengthMenu=c(3,5,10) ))
+library(stringr)
+ 
+
+
+lsmeans_results_ps = filter(lsmeans_results, Trait =="COT_Cold Tolerance_Rating")
+#plot=plot_lsmeans(lsmeans_results_ps)
+#plot+facet_grid(~timing)
+lsmeans_results_ps= lsmeans_results_ps %>%
+  mutate_if(is.character, str_trim)
+lsmeans_results_ps= lsmeans_results_ps %>%
+  mutate(across(where(is.character), str_remove_all, pattern = fixed(" ")))
+ 
+lsmeans_results_ps$Group = as.factor(lsmeans_results_ps$Group)
+lsmeans_results_ps= lsmeans_results_ps %>% mutate_if(is.numeric, round, 1)
+pd <- position_dodge(0.1)
+plot_lsmeans=ggplot(lsmeans_results_ps,aes(reorder(Group1,-lsmean),lsmean, fill=Group))+geom_bar(stat="identity")+xlab("Product")+ylab(" LSMeans")+
+  #theme_classic() + 
+  theme( axis.text = element_text( size = 10 ),
+         axis.text.x = element_text( size = 10 ),
+         axis.title = element_text( size = 10, face = "bold" ),strip.text = element_text(size = 13, face = 'bold') ) +
+     geom_text(aes(label=lsmean), position=pd, vjust=0.005, size=3)+ theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))+facet_wrap(~Trait, scales="free")+
+  geom_errorbar(aes(ymin=lsmean-SE, ymax=lsmean+SE), width=.2,
+                position=position_dodge(.9))+xlab("Hybrid")+ylab("LSMeans - COT_Cold Tolerance_Rating")
+plot_lsmeans
+```
+
+
+# Across location analysis - Early Vigor rating (EVG)
+
+```{r message=FALSE, warning=FALSE, echo=F,fig.width=15}
+lsmeans_results_ps = filter(lsmeans_results, Trait =="EVG_Early Vigor_Rating" )
+#plot=plot_lsmeans(lsmeans_results_ps)
+#plot+facet_grid(~timing)
+lsmeans_results_ps= lsmeans_results_ps %>%
+  mutate_if(is.character, str_trim)
+lsmeans_results_ps= lsmeans_results_ps %>%
+  mutate(across(where(is.character), str_remove_all, pattern = fixed(" ")))
+ 
+lsmeans_results_ps$Group = as.factor(lsmeans_results_ps$Group)
+lsmeans_results_ps= lsmeans_results_ps %>% mutate_if(is.numeric, round, 1)
+pd <- position_dodge(0.1)
+plot_lsmeans=ggplot(lsmeans_results_ps,aes(reorder(Group1,-lsmean),lsmean, fill=Group))+geom_bar(stat="identity")+xlab("Hybrid")+ylab(" LSMeans")+
+  #theme_classic() + 
+  theme( axis.text = element_text( size = 10 ),
+         axis.text.x = element_text( size = 10 ),
+         axis.title = element_text( size = 10, face = "bold" ),strip.text = element_text(size = 13, face = 'bold') ) +
+     geom_text(aes(label=lsmean), position=pd, vjust=0.005, size=3)+ theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))+facet_wrap(~Trait, scales="free")+
+  geom_errorbar(aes(ymin=lsmean-SE, ymax=lsmean+SE), width=.2,
+                position=position_dodge(.9))+xlab("Hybrid")+ylab("EVG_Early Vigor_Rating")
+plot_lsmeans
+```
+
+
+# Across location analysis - Yield
+
+```{r message=FALSE, warning=FALSE, echo=F,fig.width=15}
+lsmeans_results_ps = filter(lsmeans_results, Trait =="YLD_Yield_Quintals/Hectare")
+#plot=plot_lsmeans(lsmeans_results_ps)
+#plot+facet_grid(~timing)
+lsmeans_results_ps= lsmeans_results_ps %>%
+  mutate_if(is.character, str_trim)
+lsmeans_results_ps= lsmeans_results_ps %>%
+  mutate(across(where(is.character), str_remove_all, pattern = fixed(" ")))
+ 
+lsmeans_results_ps$Group = as.factor(lsmeans_results_ps$Group)
+lsmeans_results_ps= lsmeans_results_ps %>% mutate_if(is.numeric, round, 1)
+pd <- position_dodge(0.1)
+plot_lsmeans=ggplot(lsmeans_results_ps,aes(reorder(Group1,-lsmean),lsmean, fill=Group))+geom_bar(stat="identity")+xlab("Hybrid")+ylab(" LSMeans")+
+  #theme_classic() + 
+  theme( axis.text = element_text( size = 10 ),
+         axis.text.x = element_text( size = 10 ),
+         axis.title = element_text( size = 10, face = "bold" ),strip.text = element_text(size = 13, face = 'bold') ) +
+     geom_text(aes(label=lsmean), position=pd, vjust=0.005, size=3)+ theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))+facet_wrap(~Trait, scales="free")+
+  geom_errorbar(aes(ymin=lsmean-SE, ymax=lsmean+SE), width=.2,
+                position=position_dodge(.9))+xlab("Hybrid")+ylab("YLD_Yield_Quintals/Hectare")
+plot_lsmeans
+```
+
+
+# Across location analysis - Moisture
+ 
+```{r message=FALSE, warning=FALSE, echo=F,fig.width=15}
+#install.packages("multcompView")
+#library(MuMIn)
+ 
+ 
+
+ 
+ 
+ 
+
+
+
+
+
+
+lsmeans_results_ps = filter(lsmeans_results, Trait =="MST_Percent Moisture_Percent" )
+#plot=plot_lsmeans(lsmeans_results_ps)
+#plot+facet_grid(~timing)
+lsmeans_results_ps= lsmeans_results_ps %>%
+  mutate_if(is.character, str_trim)
+lsmeans_results_ps= lsmeans_results_ps %>%
+  mutate(across(where(is.character), str_remove_all, pattern = fixed(" ")))
+ 
+lsmeans_results_ps$Group = as.factor(lsmeans_results_ps$Group)
+lsmeans_results_ps= lsmeans_results_ps %>% mutate_if(is.numeric, round, 1)
+pd <- position_dodge(0.1)
+plot_lsmeans=ggplot(lsmeans_results_ps,aes(reorder(Group1,-lsmean),lsmean, fill=Group))+geom_bar(stat="identity")+xlab("Hybrid")+ylab(" LSMeans")+
+  #theme_classic() + 
+  theme( axis.text = element_text( size = 10 ),
+         axis.text.x = element_text( size = 10 ),
+         axis.title = element_text( size = 10, face = "bold" ),strip.text = element_text(size = 13, face = 'bold') ) +
+     geom_text(aes(label=lsmean), position=pd, vjust=0.005, size=3)+ theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))+facet_wrap(~Trait, scales="free")+
+  geom_errorbar(aes(ymin=lsmean-SE, ymax=lsmean+SE), width=.2,
+                position=position_dodge(.9))+xlab("Hybrid")+ylab("MST_Percent Moisture_Percent")
+plot_lsmeans
+```
+
+# Hybrid ranking per trait
+
+- Assigning ranks to hybrids (1-7) based on the statistical lsmeans for all 4 traits
+
+  1) COT  
+  2) EVG  
+  3) YLD  
+  4) MST  
+
+```{r message=FALSE, warning=FALSE, echo=F}
+
+lsmeans_results = lsmeans_results %>% mutate(trait_type = ifelse(Trait %in% c("BDMG","BDMG_SESACA","EROTP","ERT","EVG","FFR","INT","LWR","MST","NLB","ON2","RTLP","S50D","STGR","STLP","STRP","TDPP","ON2","LWR","PAH","FERE","COT","COT_Cold Tolerance_Rating","MST_Percent Moisture_Percent","EVG_Early Vigor_Rating" ),"negative","positive"))
+
+
+assign_hybrid_rank = function(lsmeans.df){
+  lsmeans_final=data.frame()
+  cohort_traits = unique(lsmeans.df$Trait)
+  for (i in 1:length(cohort_traits)){
+    #i=1
+    cohort_traits_1 = cohort_traits[i]
+    lsmeans.df_subset = filter(lsmeans.df, Trait==cohort_traits_1)
+    if (lsmeans.df_subset$trait_type[1]=="negative"){
+   lsmeans.df_subset = lsmeans.df_subset %>% mutate(cohort_mean=mean(lsmean,na.rm=T),hybrid_deviation_from_mean=lsmean-cohort_mean, hybrid_rank=rank(hybrid_deviation_from_mean),rank_bin=cut_interval(hybrid_rank,7),hybrid_scoring=rank(rank_bin),final_rank = dense_rank((hybrid_scoring)))
+    }
+    else if (lsmeans.df_subset$trait_type[1]=="positive"){
+      lsmeans.df_subset = lsmeans.df_subset %>% mutate(cohort_mean=mean(lsmean,na.rm=T),hybrid_deviation_from_mean=lsmean-cohort_mean, hybrid_rank=rank(-hybrid_deviation_from_mean),rank_bin=cut_interval(hybrid_rank,7),hybrid_scoring=rank(rank_bin),final_rank = dense_rank((hybrid_scoring)))
+      
+    }
+    
+    lsmeans_final = rbind(lsmeans_final,lsmeans.df_subset)
+  }
+  return(lsmeans_final)
+}
+ 
+lsmeans_final_with_rank = assign_hybrid_rank(lsmeans_results)
+lsmeans_final_with_rank = unique(lsmeans_final_with_rank)
+
+DT::datatable(lsmeans_final_with_rank, extensions = "Buttons", 
+             options = list(paging = TRUE,
+                            scrollX=TRUE, 
+                            searching = TRUE,
+                            ordering = TRUE,
+                            dom = 'Bfrtip',
+                            buttons = c('copy', 'csv', 'excel', 'pdf'),
+                            pageLength=5, 
+                            lengthMenu=c(3,5,10) ))
+
+
+```
+
+
+# Hybrid clustering using a machine learning clustering method: Hierarchical clustering
+ 
+Hybrid clustering was performed using an unsupervised machine learning clustering method named "Hierarchichal clustering". Hierarchical clustering (also called hierarchical cluster analysis or HCA) is a method of cluster analysis that seeks to build a hierarchy of clusters
+      
+Distance claculation : Euclidean method
+ 
+Linkage method : Complete linkage method
+ 
+At each step, the two clusters separated by the shortest distance are combined. The definition of 'shortest distance' is what differentiates between the different agglomerative clustering methods. In complete-linkage clustering, the link between two clusters contains all element pairs, and the distance between clusters equals the distance between those two elements (one in each cluster) that are farthest away from each other. The shortest of these links that remains at any step causes the fusion of the two clusters whose elements are involved.
+ 
+Reference: [Wikipedia](https://en.wikipedia.org/wiki/Complete-linkage_clustering)
+
+```{r message=FALSE, warning=FALSE, echo=F}
+
+
+lsmeans_final_with_rank_2 = lsmeans_final_with_rank[,c(2,10,18)]
+ 
+#lsmeans_final_with_rank_2_test = filter(lsmeans_final_with_rank_2,cohort==cohort_code)
+ 
+#lsmeans_final_with_rank_2_test$cohort = NULL
+ 
+lsmeans_final_with_rank_2 = unique(lsmeans_final_with_rank_2)
+ 
+lsmeans_final_with_rank_2_test_1 = lsmeans_final_with_rank_2 %>% spread(Trait,final_rank)
+
+
+rownames(lsmeans_final_with_rank_2_test_1) = lsmeans_final_with_rank_2_test_1[,1]
+lsmeans_final_with_rank_2_test_1 <- lsmeans_final_with_rank_2_test_1[,-1]
+ 
+autoscoring <- dist(lsmeans_final_with_rank_2_test_1) # method="man" # is a bit better
+cluster <- hclust(autoscoring, method = "complete")
+plot(cluster)
+ 
+groups <- cutree(cluster, k=5) # cut tree into 5 clusters
+# draw dendogram with red borders around the 5 clusters
+rect.hclust(cluster, k=5, border="red")
+ 
+#some_col_func <- function(n) rev(colorspace::heat_hcl(n, c = c(80, 30), l = c(30, 90), power = c(1/5, 1.5)))
+dend <- as.dendrogram(cluster)
+```
+
+
+```{r message=FALSE, warning=FALSE, echo=F, fig.width=10, fig.height=10}
+pheatmap::pheatmap(as.matrix(lsmeans_final_with_rank_2_test_1),  cluster_cols = FALSE,color=colorRampPalette(c("green", "white", "red"))(50))
+```
+ 
+ 
+```{r message=FALSE, warning=FALSE, echo=F, fig.width=10, fig.height=10}
+pheatmap::pheatmap(as.matrix(lsmeans_final_with_rank_2_test_1),  cluster_cols = TRUE,color=colorRampPalette(c("green", "white", "red"))(50))
+```
+ 
+ 
+
+# Discussion
+
+- FTS data from 2021 to 2023
+
+- Statistically significant differences between the hybrids across all traits
+
+- Potentially yield environment could be a confounding variable in the stat analysis
+
+
+
+```{r message=FALSE, warning=FALSE, echo=F}
+start_flex_4_ye = start_flex_4
+
+
+start_flex_4_ye = start_flex_4_ye %>% filter(!is.na(`YLD_Yield_Quintals/Hectare`))
+ye_start_flex_4 = start_flex_4_ye %>% group_by(unique_location_name) %>% summarise(mean_field_yield = mean(`YLD_Yield_Quintals/Hectare`,na.rm=T), sd=sd(`YLD_Yield_Quintals/Hectare`,na.rm=T),cv=(sd/mean_field_yield)*100)
+
+ye_start_flex_4 = ye_start_flex_4 %>% mutate(ye_class = ifelse(mean_field_yield<70,"1:low ye (<7 t/ha)",ifelse(mean_field_yield>110,"3:High ye (>11 t/ha)","3:Mid ye (7-11 t/ha)")))
+
+number_of_trials_per_obs = start_flex_4 %>% group_by(productName,FIELD_year) %>% summarise(number_of_trials = length(unique(unique_location_name)))
+
+number_of_trials_per_obs = start_flex_4 %>% group_by(productName,productBrand) %>% summarise(number_of_trials = length(unique(unique_location_name)),number_of_seasons = length(unique(FIELD_year)))
+
+number_of_trials_per_obs_pro = start_flex_5 %>% group_by(productName,productBrand) %>% summarise(number_of_trials = length(unique(unique_location_name)),number_of_seasons = length(unique(FIELD_year)))
+```
+
+
+
+
+```{r message=FALSE, warning=FALSE, echo=F}
+ye_start_flex_4 = start_flex_4 %>% group_by(unique_location_name) %>% summarise(mean_field_yield = mean(`YLD_Yield_Quintals/Hectare`,na.rm=T), sd=sd(`YLD_Yield_Quintals/Hectare`,na.rm=T),cv=(sd/mean_field_yield)*100)
+
+number_of_trials_per_obs = start_flex_4 %>% group_by(productName,FIELD_year) %>% summarise(number_of_trials = length(unique(unique_location_name)))
+
+number_of_trials_per_obs = start_flex_4 %>% group_by(productName,productBrand) %>% summarise(number_of_trials = length(unique(unique_location_name)),number_of_seasons = length(unique(FIELD_year)))
+
+number_of_trials_per_obs_pro = start_flex_5 %>% group_by(productName,productBrand) %>% summarise(number_of_trials = length(unique(unique_location_name)),number_of_seasons = length(unique(FIELD_year)))
+```
